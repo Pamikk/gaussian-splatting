@@ -41,12 +41,13 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
+        print(f'finish prepare {scene.loaded_iter}')
         if not skip_train:
              render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
 
         if not skip_test:
              render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+        print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
 
 if __name__ == "__main__":
     # Set up command line argument parser
