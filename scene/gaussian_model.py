@@ -198,14 +198,36 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
-
+        print('start detaching')
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-        elements[:] = list(map(tuple, attributes))
+        print(xyz.shape)
+        #attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        print('start detaching1',xyz.shape)
+        #els = []
+        step = xyz.shape[0]//64
+        from tqdm import tqdm
+        for i in tqdm(range(64)):
+            tmp = np.concatenate((xyz[:step,...], normals[:step,...], f_dc[:step,...], f_rest[:step,...], opacities[:step,...], scale[:step,...], rotation[:step,...]), axis=1)
+            elements[i*step:(i+1)*step] = list(map(tuple, tmp))            
+            #attributes= attributes[step:,...]
+            xyz, normals, f_dc, f_rest, opacities, scale, rotation = xyz[:step,...], normals[:step,...], f_dc[:step,...], f_rest[:step,...], opacities[:step,...], scale[:step,...], rotation[:step,...]
+            del(tmp)
+        
+        if 64*step<xyz.shape[0]:
+            #elements=np.empty(attributes.shape[0], dtype=dtype_full)
+            tmp =  np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+            elements[64*step:] = list(map(tuple, tmp))
+            del(tmp)
+            #els.append(PlyElement.describe(elements, 'vertex'))
+        #PlyData(els).write(path)
+        #elements[:] = list(map(tuple, attributes))
+        #print('start detaching2')
         el = PlyElement.describe(elements, 'vertex')
+        
         PlyData([el]).write(path)
+        print('finish writing')
 
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
