@@ -21,6 +21,9 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 import time
+import gc
+import psutil
+from tqdm import tqdm
 class GaussianModel:
 
     def setup_functions(self):
@@ -73,7 +76,18 @@ class GaussianModel:
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
         )
-    
+    def capture_4render(self):
+        return (
+            self.active_sh_degree,
+            self._xyz,
+            self._features_dc,
+            self._features_rest,
+            self._scaling,
+            self._rotation,
+            self._opacity,
+            self.max_radii2D,
+            self.spatial_lr_scale,
+        )
     def restore(self, model_args, training_args):
         (self.active_sh_degree, 
         self._xyz, 
@@ -91,6 +105,16 @@ class GaussianModel:
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
+    def restore_no_training_args(self, model_args):
+        (self.active_sh_degree, 
+        self._xyz, 
+        self._features_dc, 
+        self._features_rest,
+        self._scaling, 
+        self._rotation, 
+        self._opacity,
+        self.max_radii2D, 
+        self.spatial_lr_scale) = model_args
 
     @property
     def get_scaling(self):
@@ -187,40 +211,53 @@ class GaussianModel:
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
         return l
-
+    def save_params(self,path):
+        state_dict = {'xyz':self._xyz,'f_dc':self._features_dc,'f_rest':self._features_rest,'opacities':self._opacity,'scale':self._scaling,'rotation':self._rotation}
+        torch.save(state_dict,open(path))
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
-
-        xyz = self._xyz.detach().cpu().numpy()
-        normals = np.zeros_like(xyz)
-        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        opacities = self._opacity.detach().cpu().numpy()
-        scale = self._scaling.detach().cpu().numpy()
-        rotation = self._rotation.detach().cpu().numpy()
+        split_n = 128
+        print(self._xyz.shape)
+        N = self._xyz.shape[0]
+        xyz = np.array_split(self._xyz.detach().cpu().numpy(),split_n,axis=0)
+        print(len(xyz))
+        #normals = np.zeros_like(xyz)
+        f_dc = np.array_split(self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy(),split_n,axis=0)
+        f_rest = np.array_split(self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy(),split_n,axis=0)
+        opacities = np.array_split(self._opacity.detach().cpu().numpy(),split_n,axis=0)
+        scale = np.array_split(self._scaling.detach().cpu().numpy(),split_n,axis=0)
+        rotation = np.array_split(self._rotation.detach().cpu().numpy(),split_n,axis=0)
         print('start detaching')
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
-        elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        print(xyz.shape)
+        elements = np.empty(N, dtype=dtype_full)
         #attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-        print('start detaching1',xyz.shape)
+        print('start detaching1')
         #els = []
-        step = xyz.shape[0]//64
-        from tqdm import tqdm
-        for i in tqdm(range(64)):
-            tmp = np.concatenate((xyz[:step,...], normals[:step,...], f_dc[:step,...], f_rest[:step,...], opacities[:step,...], scale[:step,...], rotation[:step,...]), axis=1)
-            elements[i*step:(i+1)*step] = list(map(tuple, tmp))            
+        start = 0
+        for i in tqdm(range(split_n)):
+            normal = np.zeros_like(xyz[i])
+            tmp = (xyz[i], normal , f_dc[i], f_rest[i], opacities[i], scale[i], rotation[i])
+            xyz[i], f_dc[i], f_rest[i], opacities[i], scale[i], rotation[i] = None,None,None,None,None,None  
+            tmp_ = np.concatenate(tmp, axis=1)
+            elements[start:start+xyz[i].shape[0]] = list(map(tuple, tmp_))
+            start += xyz[i].shape[0]                   
             #attributes= attributes[step:,...]
-            xyz, normals, f_dc, f_rest, opacities, scale, rotation = xyz[:step,...], normals[:step,...], f_dc[:step,...], f_rest[:step,...], opacities[:step,...], scale[:step,...], rotation[:step,...]
             del(tmp)
+            del(tmp_)
+            del(normal)
+            gc.collect()            
+            #print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         
-        if 64*step<xyz.shape[0]:
+        '''if 64*step<N:
+            normal = np.zeros((N-64*step,3))
             #elements=np.empty(attributes.shape[0], dtype=dtype_full)
-            tmp =  np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+            tmp =  np.concatenate((xyz[64*step:,...], normal, f_dc[64*step:,...], f_rest[64*step:,...], opacities[64*step:,...], scale[64*step:,...], rotation[64*step:,...]), axis=1)
             elements[64*step:] = list(map(tuple, tmp))
+            #print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
             del(tmp)
-            #els.append(PlyElement.describe(elements, 'vertex'))
+            gc.collect()
+            #els.append(PlyElement.describe(elements, 'vertex'))'''
         #PlyData(els).write(path)
         #elements[:] = list(map(tuple, attributes))
         #print('start detaching2')
@@ -233,51 +270,67 @@ class GaussianModel:
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
+    def load_params(self,path):
+        state_dict = torch.load(open(path),map_location=torch.device('cuda'))
+        self._xyz = nn.Parameter(state_dict['xyz'])
+        self._opacity = nn.Parameter(state_dict['opacities'].float().requires_grad_(True))
+        self._features_dc = nn.Parameter(state_dict['f_dc'].float().requires_grad_(True))
+        self._features_rest = nn.Parameter(state_dict['f_rest'].float().requires_grad_(True))
+        self._scaling= nn.Parameter(state_dict['scale'].float().requires_grad_(True))
+        self._rotation = nn.Parameter(state_dict['rotation'].float().requires_grad_(True))
+        self.active_sh_degree = self.max_sh_degree
 
     def load_ply(self, path):
-        import psutil
-        import os
+        
         start = time.time()
         plydata = PlyData.read(path)
         print('start loading model')
-        
+        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),
                         np.asarray(plydata.elements[0]["z"])),  axis=1)
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         N=xyz.shape[0]
+        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(xyz)
+        gc.collect()
+        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
 
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
+        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(opacities)
+        gc.collect()
+        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
 
         features_dc = np.zeros((N, 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        print(features_dc.shape)
         print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(features_dc)
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
-        print('feature_dc')
 
         extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
         extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
+
         
         assert len(extra_f_names)==3*(self.max_sh_degree + 1) ** 2 - 3
-        features_extra = np.zeros((N, len(extra_f_names)))
+        features_extra = torch.empty((N, 3*(self.max_sh_degree + 1) ** 2 - 3), dtype=torch.float, device="cuda") #np.zeros((N, len(extra_f_names)))
         for idx, attr_name in enumerate(extra_f_names):
-            features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
+            features_extra[:, idx] = torch.tensor(np.asarray(plydata.elements[0][attr_name]), dtype=torch.float, device="cuda")
         # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
-        features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1))
+        features_extra = features_extra.reshape(N,3,(self.max_sh_degree + 1) ** 2 - 1).contiguous()
+        print('finish reshape')
         del(extra_f_names)
         print(features_extra.shape)
-        
+        gc.collect()
         print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
-        self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(features_extra.transpose(1, 2).contiguous().requires_grad_(True))
         
-        del(features_extra)        
+        del(features_extra)
+        gc.collect()        
         print('feature_extra')
         
 

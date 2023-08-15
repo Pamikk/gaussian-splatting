@@ -48,6 +48,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    viewpoint_cam_stack = scene.getTrainCameras().copy()
     for iteration in range(first_iter, opt.iterations + 1):        
         '''if network_gui.conn == None:
             network_gui.try_connect()
@@ -74,8 +75,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            viewpoint_stack = list(range(len(viewpoint_cam_stack)))
+        viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
 
         # Render
         if (iteration - 1) == debug_from:
@@ -104,6 +105,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
+                print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
+                
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
@@ -198,10 +201,10 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5000,7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[5000,7_000, 30_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000,15_000,20_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[10_000,15_000,20_000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
