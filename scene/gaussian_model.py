@@ -62,7 +62,7 @@ class GaussianModel:
         self.setup_functions()
 
     def capture(self):
-        return (
+        return [
             self.active_sh_degree,
             self._xyz,
             self._features_dc,
@@ -75,7 +75,7 @@ class GaussianModel:
             self.denom,
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
-        )
+        ]
     def capture_4render(self):
         return (
             self.active_sh_degree,
