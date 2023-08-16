@@ -177,7 +177,7 @@ python train.py -s <path to COLMAP or NeRF Synthetic dataset>
   #### --lambda_dssim
   Influence of SSIM on total loss from 0 to 1, ```0.2``` by default. 
   #### --percent_dense
-  Percentage of scene extent (0--1) a point must exceed to be forcibly densified, ```0.1``` by default.
+  Percentage of scene extent (0--1) a point must exceed to be forcibly densified, ```0.01``` by default.
 
 </details>
 <br>
@@ -274,7 +274,7 @@ python full_eval.py -m <directory with evaluation images>/garden ... --skip_trai
 <br>
 
 ## Interactive Viewers
-We provide two interactive iewers for our method: remote and real-time. Our viewing solutions are based on the [SIBR](https://sibr.gitlabpages.inria.fr/) framework, developed by the GRAPHDECO group for several novel-view synthesis projects.
+We provide two interactive viewers for our method: remote and real-time. Our viewing solutions are based on the [SIBR](https://sibr.gitlabpages.inria.fr/) framework, developed by the GRAPHDECO group for several novel-view synthesis projects.
 
 ### Hardware Requirements
 - OpenGL 4.5-ready GPU and drivers (or latest MESA software)
