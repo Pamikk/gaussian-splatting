@@ -214,9 +214,27 @@ class GaussianModel:
     def save_params(self,path):
         state_dict = {'xyz':self._xyz,'f_dc':self._features_dc,'f_rest':self._features_rest,'opacities':self._opacity,'scale':self._scaling,'rotation':self._rotation}
         torch.save(state_dict,open(path))
+    def save_ply_(self, path):
+        mkdir_p(os.path.dirname(path))
+
+        xyz = self._xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = self._opacity.detach().cpu().numpy()
+        scale = self._scaling.detach().cpu().numpy()
+        rotation = self._rotation.detach().cpu().numpy()
+
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
-        split_n = 128
+        split_n = 8
         print(self._xyz.shape)
         N = self._xyz.shape[0]
         xyz = np.array_split(self._xyz.detach().cpu().numpy(),split_n,axis=0)
@@ -235,19 +253,23 @@ class GaussianModel:
         print('start detaching1')
         #els = []
         start = 0
-        for i in tqdm(range(split_n)):
+        sizes = [i.shape[0] for i in xyz]
+        indices=[0]
+        indices = [indices[i-1]+sizes[i-1] for i in range(1,len(sizes)+1)]
+        def load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i):
             normal = np.zeros_like(xyz[i])
-            tmp = (xyz[i], normal , f_dc[i], f_rest[i], opacities[i], scale[i], rotation[i])
-            xyz[i], f_dc[i], f_rest[i], opacities[i], scale[i], rotation[i] = None,None,None,None,None,None  
+            tmp = (xyz[i],normal,f_dc[i],f_rest[i],opacities[i],scale[i],rotation[i])
             tmp_ = np.concatenate(tmp, axis=1)
-            elements[start:start+xyz[i].shape[0]] = list(map(tuple, tmp_))
-            start += xyz[i].shape[0]                   
+            elements[indices[i]:indices[i+1]] = list(map(tuple, tmp_))                  
             #attributes= attributes[step:,...]
+            xyz[i],f_dc[i],f_rest[i],opacities[i],scale[i],rotation[i] = None,None,None,None,None,None  
             del(tmp)
             del(tmp_)
             del(normal)
-            gc.collect()            
-            #print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
+            gc.collect()  
+        for i in tqdm(range(split_n)):
+            load_part(elements,xyz[i],f_dc[i],f_rest[i],opacities[i],scale[i],rotation[i],indices,i)          
+            print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         
         '''if 64*step<N:
             normal = np.zeros((N-64*step,3))
