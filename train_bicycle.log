@@ -195,4 +195,16 @@ Reading camera 190/194
 Reading camera 191/194
 Reading camera 192/194
 Reading camera 193/194
-Reading camera 194/194
+Reading camera 194/194 [16/08 18:32:24]
+Loading Training Cameras [16/08 18:32:24]
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+ If this is not desired, please explicitly specify '--resolution/-r' as 1 [16/08 18:32:24]
+Loading Test Cameras [16/08 18:33:50]
+Number of points at initialisation :  54275 [16/08 18:33:50]
+Training progress:   0%|          | 0/30000 [00:00<?, ?it/s]Traceback (most recent call last):
+  File "train.py", line 297, in <module>
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+  File "train.py", line 166, in training
+    sparsity.append(visibility_filter.sum().item()*1.0/(1.0*visibility_filter.shape))
+TypeError: can't multiply sequence by non-int of type 'float'
+Training progress:   0%|          | 0/30000 [00:00<?, ?it/s]
