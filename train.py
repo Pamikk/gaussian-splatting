@@ -106,9 +106,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         load_cam_time = time.time()
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-            #viewpoint_stack = list(range(len(viewpoint_cam_stack)))
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))#viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
+            #viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_stack = list(range(len(viewpoint_cam_stack)))
+        viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
         load_cam_time_accum += time.time() - load_cam_time
 
         # Render
@@ -124,6 +124,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()#possible to load all images into cuda first
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        
         loss.backward()
         loss_time_accum += time.time() - loss_time
 
@@ -135,14 +136,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Progress bar
             logging_time = time.time()
             tqdm_time = time.time()
+            torch.cuda.synchronize()
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            tqdm_time_accum += time.time() - tqdm_time
+            
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
             
-            tqdm_time_accum += time.time() - tqdm_time
+            
 
             # Log and save
             tensorboard_time = time.time()
@@ -207,8 +211,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t \t|-- tensorboard time: ", tensorboard_time_accum)
     print("\t \t|-- other logging time: ", logging_time_accum - tqdm_time_accum - tensorboard_time_accum)
     sparsity = torch.tensor(sparsity)
-    print(sparsity.min().item(),sparsity.max().item(),sparsity.mean().item(),sparsity.median().item())
 
+    print(sparsity.min().item(),sparsity.max().item(),sparsity.mean().item(),sparsity.median().item())
+    print(sparsity.argmin(),sparsity.argmax())
+    torch.save(sparsity,'visibility.pth')
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):

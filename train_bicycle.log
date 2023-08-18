@@ -1,214 +1,106 @@
-Optimizing /home/peijiaxu/exps/gs/bicycle_
-Output folder: /home/peijiaxu/exps/gs/bicycle_ [16/08 18:32:24]
-Tensorboard not available: not logging progress [16/08 18:32:24]
+tensor dict time:2.1276791095733643 [16/08 23:13:20]
+torch.Size([5731252, 3]) [16/08 23:13:20]
+8 [16/08 23:13:20]
+start detaching [16/08 23:13:21]
+start detaching1 [16/08 23:13:21]
 
-Reading camera 1/194
-Reading camera 2/194
-Reading camera 3/194
-Reading camera 4/194
-Reading camera 5/194
-Reading camera 6/194
-Reading camera 7/194
-Reading camera 8/194
-Reading camera 9/194
-Reading camera 10/194
-Reading camera 11/194
-Reading camera 12/194
-Reading camera 13/194
-Reading camera 14/194
-Reading camera 15/194
-Reading camera 16/194
-Reading camera 17/194
-Reading camera 18/194
-Reading camera 19/194
-Reading camera 20/194
-Reading camera 21/194
-Reading camera 22/194
-Reading camera 23/194
-Reading camera 24/194
-Reading camera 25/194
-Reading camera 26/194
-Reading camera 27/194
-Reading camera 28/194
-Reading camera 29/194
-Reading camera 30/194
-Reading camera 31/194
-Reading camera 32/194
-Reading camera 33/194
-Reading camera 34/194
-Reading camera 35/194
-Reading camera 36/194
-Reading camera 37/194
-Reading camera 38/194
-Reading camera 39/194
-Reading camera 40/194
-Reading camera 41/194
-Reading camera 42/194
-Reading camera 43/194
-Reading camera 44/194
-Reading camera 45/194
-Reading camera 46/194
-Reading camera 47/194
-Reading camera 48/194
-Reading camera 49/194
-Reading camera 50/194
-Reading camera 51/194
-Reading camera 52/194
-Reading camera 53/194
-Reading camera 54/194
-Reading camera 55/194
-Reading camera 56/194
-Reading camera 57/194
-Reading camera 58/194
-Reading camera 59/194
-Reading camera 60/194
-Reading camera 61/194
-Reading camera 62/194
-Reading camera 63/194
-Reading camera 64/194
-Reading camera 65/194
-Reading camera 66/194
-Reading camera 67/194
-Reading camera 68/194
-Reading camera 69/194
-Reading camera 70/194
-Reading camera 71/194
-Reading camera 72/194
-Reading camera 73/194
-Reading camera 74/194
-Reading camera 75/194
-Reading camera 76/194
-Reading camera 77/194
-Reading camera 78/194
-Reading camera 79/194
-Reading camera 80/194
-Reading camera 81/194
-Reading camera 82/194
-Reading camera 83/194
-Reading camera 84/194
-Reading camera 85/194
-Reading camera 86/194
-Reading camera 87/194
-Reading camera 88/194
-Reading camera 89/194
-Reading camera 90/194
-Reading camera 91/194
-Reading camera 92/194
-Reading camera 93/194
-Reading camera 94/194
-Reading camera 95/194
-Reading camera 96/194
-Reading camera 97/194
-Reading camera 98/194
-Reading camera 99/194
-Reading camera 100/194
-Reading camera 101/194
-Reading camera 102/194
-Reading camera 103/194
-Reading camera 104/194
-Reading camera 105/194
-Reading camera 106/194
-Reading camera 107/194
-Reading camera 108/194
-Reading camera 109/194
-Reading camera 110/194
-Reading camera 111/194
-Reading camera 112/194
-Reading camera 113/194
-Reading camera 114/194
-Reading camera 115/194
-Reading camera 116/194
-Reading camera 117/194
-Reading camera 118/194
-Reading camera 119/194
-Reading camera 120/194
-Reading camera 121/194
-Reading camera 122/194
-Reading camera 123/194
-Reading camera 124/194
-Reading camera 125/194
-Reading camera 126/194
-Reading camera 127/194
-Reading camera 128/194
-Reading camera 129/194
-Reading camera 130/194
-Reading camera 131/194
-Reading camera 132/194
-Reading camera 133/194
-Reading camera 134/194
-Reading camera 135/194
-Reading camera 136/194
-Reading camera 137/194
-Reading camera 138/194
-Reading camera 139/194
-Reading camera 140/194
-Reading camera 141/194
-Reading camera 142/194
-Reading camera 143/194
-Reading camera 144/194
-Reading camera 145/194
-Reading camera 146/194
-Reading camera 147/194
-Reading camera 148/194
-Reading camera 149/194
-Reading camera 150/194
-Reading camera 151/194
-Reading camera 152/194
-Reading camera 153/194
-Reading camera 154/194
-Reading camera 155/194
-Reading camera 156/194
-Reading camera 157/194
-Reading camera 158/194
-Reading camera 159/194
-Reading camera 160/194
-Reading camera 161/194
-Reading camera 162/194
-Reading camera 163/194
-Reading camera 164/194
-Reading camera 165/194
-Reading camera 166/194
-Reading camera 167/194
-Reading camera 168/194
-Reading camera 169/194
-Reading camera 170/194
-Reading camera 171/194
-Reading camera 172/194
-Reading camera 173/194
-Reading camera 174/194
-Reading camera 175/194
-Reading camera 176/194
-Reading camera 177/194
-Reading camera 178/194
-Reading camera 179/194
-Reading camera 180/194
-Reading camera 181/194
-Reading camera 182/194
-Reading camera 183/194
-Reading camera 184/194
-Reading camera 185/194
-Reading camera 186/194
-Reading camera 187/194
-Reading camera 188/194
-Reading camera 189/194
-Reading camera 190/194
-Reading camera 191/194
-Reading camera 192/194
-Reading camera 193/194
-Reading camera 194/194 [16/08 18:32:24]
-Loading Training Cameras [16/08 18:32:24]
-[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
- If this is not desired, please explicitly specify '--resolution/-r' as 1 [16/08 18:32:24]
-Loading Test Cameras [16/08 18:33:50]
-Number of points at initialisation :  54275 [16/08 18:33:50]
-Training progress:   0%|          | 0/30000 [00:00<?, ?it/s]Traceback (most recent call last):
-  File "train.py", line 297, in <module>
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
-  File "train.py", line 166, in training
-    sparsity.append(visibility_filter.sum().item()*1.0/(1.0*visibility_filter.shape))
-TypeError: can't multiply sequence by non-int of type 'float'
-Training progress:   0%|          | 0/30000 [00:00<?, ?it/s]
-Optimizing /home/peijiaxu/exps/gs/bicycle_
-Output folder: /home/peijiaxu/exps/gs/bicycle_ [16/08 18:37:05]
-Tensorboard not available: not logging progress [16/08 18:37:05]
-Reading camera 1/194Reading camera 2/194Reading camera 3/194Reading camera 4/194Reading camera 5/194Reading camera 6/194Reading camera 7/194Reading camera 8/194Reading camera 9/194Reading camera 10/194Reading camera 11/194Reading camera 12/194Reading camera 13/194Reading camera 14/194Reading camera 15/194Reading camera 16/194Reading camera 17/194Reading camera 18/194Reading camera 19/194Reading camera 20/194Reading camera 21/194Reading camera 22/194Reading camera 23/194Reading camera 24/194Reading camera 25/194Reading camera 26/194Reading camera 27/194Reading camera 28/194Reading camera 29/194Reading camera 30/194Reading camera 31/194Reading camera 32/194Reading camera 33/194Reading camera 34/194Reading camera 35/194Reading camera 36/194Reading camera 37/194Reading camera 38/194Reading camera 39/194Reading camera 40/194Reading camera 41/194Reading camera 42/194Reading camera 43/194Reading camera 44/194Reading camera 45/194Reading camera 46/194Reading camera 47/194Reading camera 48/194Reading camera 49/194Reading camera 50/194Reading camera 51/194Reading camera 52/194Reading camera 53/194Reading camera 54/194Reading camera 55/194Reading camera 56/194Reading camera 57/194Reading camera 58/194Reading camera 59/194Reading camera 60/194Reading camera 61/194Reading camera 62/194Reading camera 63/194Reading camera 64/194Reading camera 65/194Reading camera 66/194Reading camera 67/194Reading camera 68/194Reading camera 69/194Reading camera 70/194Reading camera 71/194Reading camera 72/194Reading camera 73/194Reading camera 74/194Reading camera 75/194Reading camera 76/194Reading camera 77/194Reading camera 78/194Reading camera 79/194Reading camera 80/194Reading camera 81/194Reading camera 82/194Reading camera 83/194Reading camera 84/194Reading camera 85/194Reading camera 86/194Reading camera 87/194Reading camera 88/194Reading camera 89/194Reading camera 90/194Reading camera 91/194Reading camera 92/194Reading camera 93/194Reading camera 94/194Reading camera 95/194Reading camera 96/194Reading camera 97/194Reading camera 98/194Reading camera 99/194Reading camera 100/194Reading camera 101/194Reading camera 102/194Reading camera 103/194Reading camera 104/194Reading camera 105/194Reading camera 106/194Reading camera 107/194Reading camera 108/194Reading camera 109/194Reading camera 110/194Reading camera 111/194Reading camera 112/194Reading camera 113/194Reading camera 114/194Reading camera 115/194Reading camera 116/194Reading camera 117/194Reading camera 118/194Reading camera 119/194Reading camera 120/194Reading camera 121/194Reading camera 122/194Reading camera 123/194Reading camera 124/194Reading camera 125/194Reading camera 126/194Reading camera 127/194Reading camera 128/194Reading camera 129/194Reading camera 130/194Reading camera 131/194Reading camera 132/194Reading camera 133/194Reading camera 134/194Reading camera 135/194Reading camera 136/194Reading camera 137/194Reading camera 138/194Reading camera 139/194Reading camera 140/194Reading camera 141/194Reading camera 142/194Reading camera 143/194Reading camera 144/194Reading camera 145/194Reading camera 146/194Reading camera 147/194Reading camera 148/194Reading camera 149/194Reading camera 150/194Reading camera 151/194Reading camera 152/194Reading camera 153/194Reading camera 154/194Reading camera 155/194Reading camera 156/194Reading camera 157/194Reading camera 158/194Reading camera 159/194Reading camera 160/194Reading camera 161/194Reading camera 162/194Reading camera 163/194Reading camera 164/194Reading camera 165/194Reading camera 166/194Reading camera 167/194Reading camera 168/194Reading camera 169/194Reading camera 170/194Reading camera 171/194Reading camera 172/194Reading camera 173/194Reading camera 174/194Reading camera 175/194Reading camera 176/194Reading camera 177/194Reading camera 178/194Reading camera 179/194Reading camera 180/194Reading camera 181/194Reading camera 182/194Reading camera 183/194Reading camera 184/194Reading camera 185/194Reading camera 186/194Reading camera 187/194Reading camera 188/194Reading camera 189/194Reading camera 190/194Reading camera 191/194Reading camera 192/194Reading camera 193/194Reading camera 194/194
+  0%|          | 0/8 [00:00<?, ?it/s]
+ 12%|█▎        | 1/8 [00:03<00:26,  3.74s/it]
+ 25%|██▌       | 2/8 [00:07<00:22,  3.70s/it]
+ 38%|███▊      | 3/8 [00:11<00:18,  3.69s/it]
+ 50%|█████     | 4/8 [00:14<00:14,  3.69s/it]
+ 62%|██████▎   | 5/8 [00:18<00:11,  3.69s/it]
+ 75%|███████▌  | 6/8 [00:22<00:07,  3.69s/it]
+ 88%|████████▊ | 7/8 [00:25<00:03,  3.69s/it]
+100%|██████████| 8/8 [00:29<00:00,  3.70s/it]
+100%|██████████| 8/8 [00:29<00:00,  3.70s/it]
+cpu mem17070.15625 [16/08 23:13:25]
+cpu mem17238.15625 [16/08 23:13:28]
+cpu mem17408.15625 [16/08 23:13:32]
+cpu mem17578.15625 [16/08 23:13:36]
+cpu mem17746.15625 [16/08 23:13:39]
+cpu mem17916.15625 [16/08 23:13:43]
+cpu mem18086.15625 [16/08 23:13:47]
+cpu mem17183.03125 [16/08 23:13:50]
+finish writing [16/08 23:13:51]
+ply time:30.766034841537476 [16/08 23:13:51]
+| [16/08 23:13:51]
+ | total:  2034.952713251114 [16/08 23:13:51]
+	 | [16/08 23:13:51]
+	 |-- training (total):  1162.2240107059479 [16/08 23:13:51]
+	 	|-- load_cam time:  0.14806294441223145 [16/08 23:13:51]
+	 	|-- render time:  928.0311357975006 [16/08 23:13:51]
+	 	|-- loss time:  231.40994548797607 [16/08 23:13:51]
+	 	|-- other training time:  2.63486647605896 [16/08 23:13:51]
+	 | [16/08 23:13:51]
+	 |-- densify:  13.908572912216187 [16/08 23:13:51]
+	 | [16/08 23:13:51]
+	 |-- optimize:  14.40559983253479 [16/08 23:13:51]
+	 | [16/08 23:13:51]
+	 |-- logging (total):  824.937903881073 [16/08 23:13:51]
+	 	|-- tqdm time:  699.3311231136322 [16/08 23:13:51]
+	 	|-- radii time:  6.943185091018677 [16/08 23:13:51]
+	 	|-- tensorboard time:  0.29351258277893066 [16/08 23:13:51]
+	 	|-- other logging time:  125.31326818466187 [16/08 23:13:51]
+0.021520037204027176 0.5634850263595581 0.24322587251663208 0.23588956892490387 [16/08 23:13:51]
+
+Training complete. [16/08 23:13:51]
+
+torch.Size([1233782, 3]) [17/08 16:23:41]
+8 [17/08 16:23:41]
+start detaching [17/08 16:23:41]
+start detaching1 [17/08 16:23:41]
+  0%|                                                                                                                                                               | 0/8 [00:00<?, ?it/s]cpu mem11437.71484375 [17/08 16:23:41]
+ 12%|██████████████████▉                                                                                                                                    | 1/8 [00:00<00:05,  1.23it/s]cpu mem11473.8359375 [17/08 16:23:42]
+ 25%|█████████████████████████████████████▊                                                                                                                 | 2/8 [00:01<00:04,  1.25it/s]cpu mem11509.8359375 [17/08 16:23:43]
+ 38%|████████████████████████████████████████████████████████▋                                                                                              | 3/8 [00:02<00:04,  1.25it/s]cpu mem11547.95703125 [17/08 16:23:44]
+ 50%|███████████████████████████████████████████████████████████████████████████▌                                                                           | 4/8 [00:03<00:03,  1.25it/s]cpu mem11583.95703125 [17/08 16:23:45]
+ 62%|██████████████████████████████████████████████████████████████████████████████████████████████▍                                                        | 5/8 [00:03<00:02,  1.25it/s]cpu mem11620.078125 [17/08 16:23:45]
+ 75%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████▎                                     | 6/8 [00:04<00:01,  1.26it/s]cpu mem11656.078125 [17/08 16:23:46]
+ 88%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▏                  | 7/8 [00:05<00:00,  1.26it/s]cpu mem11480.40625 [17/08 16:23:47]
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 8/8 [00:06<00:00,  1.25it/s]
+finish writing [17/08 16:23:47]
+ply time:6.591177225112915 [17/08 16:23:47]
+| [17/08 16:23:47]
+ | total:  865.40993475914 [17/08 16:23:47]
+         | [17/08 16:23:47]
+         |-- training (total):  347.29668974876404 [17/08 16:23:47]
+                |-- load_cam time:  0.1764366626739502 [17/08 16:23:47]
+                |-- render time:  208.918799161911 [17/08 16:23:47]
+                |-- loss time:  135.12503123283386 [17/08 16:23:47]
+                |-- other training time:  3.076422691345215 [17/08 16:23:47]
+         | [17/08 16:23:47]
+         |-- densify:  11.015339851379395 [17/08 16:23:47]
+         | [17/08 16:23:47]
+         |-- optimize:  16.01198673248291 [17/08 16:23:47]
+         | [17/08 16:23:47]
+         |-- logging (total):  486.2774658203125 [17/08 16:23:47]
+                |-- tqdm time:  453.62575507164 [17/08 16:23:47]
+                |-- radii time:  6.421717882156372 [17/08 16:23:47]
+                |-- tensorboard time:  0.24243712425231934 [17/08 16:23:47]
+                |-- other logging time:  32.409273624420166 [17/08 16:23:47]
+0.20987094938755035 0.8116623759269714 0.3655189573764801 0.3569261133670807 [17/08 16:23:47]
+tensor(14953) tensor(48) [17/08 16:23:47]
+ply time:6.603168249130249 [17/08 18:13:02]
+| [17/08 18:13:02]
+ | total:  859.709920167923 [17/08 18:13:02]
+         | [17/08 18:13:02]
+         |-- training (total):  359.7397074699402 [17/08 18:13:02]
+                |-- load_cam time:  0.1482996940612793 [17/08 18:13:02]
+                |-- render time:  210.54231595993042 [17/08 18:13:02]
+                |-- loss time:  146.4682948589325 [17/08 18:13:02]
+                |-- other training time:  2.580796957015991 [17/08 18:13:02]
+         | [17/08 18:13:02]
+         |-- densify:  10.60554552078247 [17/08 18:13:02]
+         | [17/08 18:13:02]
+         |-- optimize:  15.656217813491821 [17/08 18:13:02]
+         | [17/08 18:13:02]
+         |-- logging (total):  469.0382249355316 [17/08 18:13:02]
+                |-- tqdm time:  439.9910264015198 [17/08 18:13:02]
+                |-- radii time:  6.331273317337036 [17/08 18:13:02]
+                |-- tensorboard time:  0.19527626037597656 [17/08 18:13:02]
+                |-- other logging time:  28.851922273635864 [17/08 18:13:02]
+0.20932109653949738 0.8116672039031982 0.3653493821620941 0.3567751348018646 [17/08 18:13:02]
+tensor(14953) tensor(48) [17/08 18:13:02]
+
+Training complete. [17/08 18:13:02]

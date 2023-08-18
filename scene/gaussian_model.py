@@ -252,10 +252,10 @@ class GaussianModel:
         #attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         print('start detaching1')
         #els = []
-        start = 0
         sizes = [i.shape[0] for i in xyz]
-        indices=[0]
-        indices = [indices[i-1]+sizes[i-1] for i in range(1,len(sizes)+1)]
+        indices=[0]+sizes
+        for i in range(1,len(sizes)+1):
+            indices[i] = sizes[i-1]+indices[i-1]
         def load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i):
             normal = np.zeros_like(xyz[i])
             tmp = (xyz[i],normal,f_dc[i],f_rest[i],opacities[i],scale[i],rotation[i])
@@ -268,7 +268,7 @@ class GaussianModel:
             del(normal)
             gc.collect()  
         for i in tqdm(range(split_n)):
-            load_part(elements,xyz[i],f_dc[i],f_rest[i],opacities[i],scale[i],rotation[i],indices,i)          
+            load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i)          
             print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         
         '''if 64*step<N:
