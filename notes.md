@@ -8,4 +8,4 @@
 + gradiant operations?
 + radii - check if sparse?
   + sparse
-  + but mainly cuda synchronize problem.
+  + but mainly bc cuda synchronize problem - loss backward.
