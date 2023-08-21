@@ -73,10 +73,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     viewpoint_stack = None
     ema_loss_for_log = 0.0
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
+    #progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     viewpoint_cam_stack = scene.getTrainCameras().copy()
     sparsity = []
+    loss_cal_time=0
     for iteration in range(first_iter, opt.iterations + 1):     
         total_time = time.time()   
         '''if network_gui.conn == None:
@@ -124,7 +125,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()#possible to load all images into cuda first
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        
+        loss_cal_time += time.time() - loss_time
         loss.backward()
         loss_time_accum += time.time() - loss_time
 
@@ -136,15 +137,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Progress bar
             logging_time = time.time()
             tqdm_time = time.time()
+            #ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             torch.cuda.synchronize()
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            tqdm_time_accum += time.time() - tqdm_time
             
-            if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                progress_bar.update(10)
-            if iteration == opt.iterations:
-                progress_bar.close()
+            #if iteration % 10 == 0:
+                #progress_bar.set_postfix({"Loss": "nan"})
+                #progress_bar.update(10)
+            #if iteration == opt.iterations:
+                #progress_bar.close()
+            tqdm_time_accum += time.time() - tqdm_time
             
             
 

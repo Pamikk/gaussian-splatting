@@ -91,9 +91,9 @@ class Scene:
         start = time.time()
         torch.save((self.gaussians.capture_4render(), iteration), self.model_path + "/render" + str(iteration) + ".pth")
         print(f'tensor dict time:{time.time()-start}')
-        start = time.time()
-        self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        print(f'ply time:{time.time()-start}')
+        #start = time.time()
+        #self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+        #print(f'ply time:{time.time()-start}')
         
 
     def getTrainCameras(self, scale=1.0):

@@ -267,7 +267,7 @@ class GaussianModel:
             del(tmp_)
             del(normal)
             gc.collect()  
-        for i in tqdm(range(split_n)):
+        for i in range(split_n):
             load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i)          
             print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         
