@@ -22,7 +22,6 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 import time
 import gc
-import psutil
 from tqdm import tqdm
 class GaussianModel:
 
@@ -60,7 +59,24 @@ class GaussianModel:
         self.percent_dense = 0
         self.spatial_lr_scale = 0
         self.setup_functions()
-
+    def to(self,device="cuda:0"):
+        (self.active_sh_degree, 
+        self._xyz, 
+        self._features_dc, 
+        self._features_rest,
+        self._scaling, 
+        self._rotation, 
+        self._opacity,
+        self.max_radii2D, 
+        self.spatial_lr_scale) = self.active_sh_degree.to(device), 
+        self._xyz.to(device), 
+        self._features_dc.to(device), 
+        self._features_rest.to(device),
+        self._scaling.to(device), 
+        self._rotation.to(device), 
+        self._opacity.to(device),
+        self.max_radii2D.to(device), 
+        self.spatial_lr_scale.to(device)
     def capture(self):
         return [
             self.active_sh_degree,
@@ -146,6 +162,7 @@ class GaussianModel:
             self.active_sh_degree += 1
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+        print("finish camera Loading")
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
@@ -153,7 +170,7 @@ class GaussianModel:
         features[:, :3, 0 ] = fused_color
         features[:, 3:, 1:] = 0.0
 
-        print("Number of points at initialisation : ", fused_point_cloud.shape[0])
+        
 
         dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
         scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
@@ -169,6 +186,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -268,21 +286,7 @@ class GaussianModel:
             del(normal)
             gc.collect()  
         for i in range(split_n):
-            load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i)          
-            print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
-        
-        '''if 64*step<N:
-            normal = np.zeros((N-64*step,3))
-            #elements=np.empty(attributes.shape[0], dtype=dtype_full)
-            tmp =  np.concatenate((xyz[64*step:,...], normal, f_dc[64*step:,...], f_rest[64*step:,...], opacities[64*step:,...], scale[64*step:,...], rotation[64*step:,...]), axis=1)
-            elements[64*step:] = list(map(tuple, tmp))
-            #print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
-            del(tmp)
-            gc.collect()
-            #els.append(PlyElement.describe(elements, 'vertex'))'''
-        #PlyData(els).write(path)
-        #elements[:] = list(map(tuple, attributes))
-        #print('start detaching2')
+            load_part(elements,xyz,f_dc,f_rest,opacities,scale,rotation,indices,i)#modify to multiprocess if necessary          
         el = PlyElement.describe(elements, 'vertex')
         
         PlyData([el]).write(path)
@@ -307,23 +311,18 @@ class GaussianModel:
         start = time.time()
         plydata = PlyData.read(path)
         print('start loading model')
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),
                         np.asarray(plydata.elements[0]["z"])),  axis=1)
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         N=xyz.shape[0]
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(xyz)
         gc.collect()
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
 
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(opacities)
         gc.collect()
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
 
         features_dc = np.zeros((N, 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -331,7 +330,6 @@ class GaussianModel:
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
         print(features_dc.shape)
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         del(features_dc)
 
         extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
@@ -346,9 +344,7 @@ class GaussianModel:
         features_extra = features_extra.reshape(N,3,(self.max_sh_degree + 1) ** 2 - 1).contiguous()
         print('finish reshape')
         del(extra_f_names)
-        print(features_extra.shape)
         gc.collect()
-        print(f'cpu mem{psutil.Process(os.getpid()).memory_info().rss/1024/1024}')
         self._features_rest = nn.Parameter(features_extra.transpose(1, 2).contiguous().requires_grad_(True))
         
         del(features_extra)

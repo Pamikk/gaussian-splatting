@@ -34,7 +34,7 @@ l1_loss = torch.nn.L1Loss()
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
-    ssim = SSIM()
+    ssim = SSIM()#torch.nn.DataParallel(SSIM())
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -53,6 +53,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     total_time_accum = 0
 
     train_time = 0
+    lr_time_accum = 0.0
     train_time_accum = 0.0
     load_cam_time = 0
     load_cam_time_accum = 0
@@ -83,134 +84,130 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_cam_stack = scene.getTrainCameras().copy()
     sparsity = []
     loss_cal_time=0
-    with profile(activities=[ProfilerActivity.CPU,ProfilerActivity.CUDA],
-        profile_memory=True, record_shapes=True) as prof:
-        for iteration in range(first_iter, opt.iterations + 1):     
-            total_time = time.time()   
-            '''if network_gui.conn == None:
-                network_gui.try_connect()
-            while network_gui.conn != None:
-                try:
-                    net_image_bytes = None
-                    custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-                    if custom_cam != None:
-                        net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
-                        net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                    network_gui.send(net_image_bytes, dataset.source_path)
-                    if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
-                        break
-                except Exception as e:
-                    network_gui.conn = None'''
+    for iteration in range(first_iter, opt.iterations + 1):     
+        total_time = time.time()   
+        '''if network_gui.conn == None:
+            network_gui.try_connect()
+        while network_gui.conn != None:
+            try:
+                net_image_bytes = None
+                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+                if custom_cam != None:
+                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
+                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+                network_gui.send(net_image_bytes, dataset.source_path)
+                if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
+                    break
+            except Exception as e:
+                network_gui.conn = None'''
 
-            iter_start.record()
-            train_start = time.time()
+        iter_start.record()
+        train_start = time.time()
 
-            gaussians.update_learning_rate(iteration)
+        gaussians.update_learning_rate(iteration)
+        lr_time_accum += time.time()-train_start
+        # Every 1000 its we increase the levels of SH up to a maximum degree
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
 
-            # Every 1000 its we increase the levels of SH up to a maximum degree
-            if iteration % 1000 == 0:
-                gaussians.oneupSHdegree()
+        load_cam_time = time.time()
+        # Pick a random Camera
+        if not viewpoint_stack:
+            #viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_stack = list(range(len(viewpoint_cam_stack)))
+        viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
+        load_cam_time_accum += time.time() - load_cam_time
 
-            load_cam_time = time.time()
-            # Pick a random Camera
-            if not viewpoint_stack:
-                #viewpoint_stack = scene.getTrainCameras().copy()
-                viewpoint_stack = list(range(len(viewpoint_cam_stack)))
-            viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
-            load_cam_time_accum += time.time() - load_cam_time
+        # Render
+        render_time = time.time()
+        #if (iteration - 1) == debug_from:
+            #pipe.debug = True
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        render_time_accum += time.time() - render_time
 
-            # Render
-            render_time = time.time()
-            if (iteration - 1) == debug_from:
-                pipe.debug = True
-            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-            render_time_accum += time.time() - render_time
-
-            # Loss
-            loss_time = time.time()
-            gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
-            Ll1 = l1_loss(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-            loss_cal_time += time.time() - loss_time
-            loss.backward()
+        # Loss
+        loss_time = time.time()
+        gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
+        Ll1 = l1_loss(image, gt_image)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        loss_cal_time += time.time() - loss_time
+        loss.backward()
+        cur_loss = loss.item()
+        torch.cuda.synchronize()
+        loss_time_accum += time.time() - loss_time
+        
+        iter_end.record()
+        
+        
+        
+        train_end = time.time()
+        train_time_accum += train_end - train_start
+        
+        with torch.no_grad():
+            # Progress bar
+            logging_time = time.time()
+            tqdm_time = time.time()
+            ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
+            #torch.cuda.synchronize()
             
-            loss_time_accum += time.time() - loss_time
+            if iteration % 10 == 0:
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
+                progress_bar.update(10)
+            if iteration == opt.iterations:
+                progress_bar.close()
+            tqdm_time_accum += time.time() - tqdm_time
+            cuda_time_single = iter_start.elapsed_time(iter_end)
+            cuda_time +=cuda_time_single
+            
             
 
-            iter_end.record()
-            torch.cuda.synchronize()
-            cuda_time +=iter_start.elapsed_time(iter_end)
-            
-            train_end = time.time()
-            train_time_accum += train_end - train_start
-            
-            with torch.no_grad():
-                # Progress bar
-                logging_time = time.time()
-                tqdm_time = time.time()
-                ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-                #torch.cuda.synchronize()
+            # Log and save
+            tensorboard_time = time.time()
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time_single, testing_iterations, scene, render, (pipe, background))
+            tensorboard_time_accum += time.time() - tensorboard_time
+
+            if (iteration in saving_iterations):
+                print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
+                print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
                 
-                if iteration % 10 == 0:
-                    progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
-                    progress_bar.update(10)
-                if iteration == opt.iterations:
-                    progress_bar.close()
-                tqdm_time_accum += time.time() - tqdm_time
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene.save(iteration)
+            logging_time_accum += time.time() - logging_time
+
+            # Densification
+            densify_time = time.time()
+            if iteration < opt.densify_until_iter:
+                # Keep track of max radii in image-space for pruning
+                radii_time = time.time()
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                radii_time_accum += time.time()-radii_time
+
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                 
-
-                # Log and save
-                tensorboard_time = time.time()
-                training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
-                tensorboard_time_accum += time.time() - tensorboard_time
-
-                if (iteration in saving_iterations):
-                    print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
-                    print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
-                    
-                    print("\n[ITER {}] Saving Gaussians".format(iteration))
-                    scene.save(iteration)
-                logging_time_accum += time.time() - logging_time
-    
-                # Densification
-                densify_time = time.time()
-                if iteration < opt.densify_until_iter:
-                    # Keep track of max radii in image-space for pruning
-                    #print(visibility_filter.sum().item())
-                    #print(visibility_filter.shape,gaussians.max_radii2D.shape)
-                    sparsity.append((visibility_filter.sum().item()*1.0)/(1.0*visibility_filter.shape[0]))
-                    radii_time = time.time()
-                    gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                    
-                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-                    radii_time_accum += time.time()-radii_time
-
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                    
-                    if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                        gaussians.reset_opacity()
-                densify_time_accum += time.time() - densify_time
-                optimize_time = time.time()
-                # Optimizer step
-                if iteration < opt.iterations:
-                    gaussians.optimizer.step()
-                    gaussians.optimizer.zero_grad(set_to_none = True)
-                optimize_time_accum += time.time() - optimize_time
-                if (iteration in checkpoint_iterations):
-                    print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                    torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-            total_time_accum += time.time() - total_time
-            break
-    print(prof.key_averages(group_by_stack_n=5).table(sort_by="self_cuda_time_total"))
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
+            densify_time_accum += time.time() - densify_time
+            optimize_time = time.time()
+            # Optimizer step
+            if iteration < opt.iterations:
+                gaussians.optimizer.step()
+                gaussians.optimizer.zero_grad(set_to_none = True)
+            optimize_time_accum += time.time() - optimize_time
+            if (iteration in checkpoint_iterations):
+                print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        total_time_accum += time.time() - total_time
     print("|")
     print(" | total: ", total_time_accum)
     print("\t |")
     print("\t |-- training (total): ", train_time_accum)
     print("\t \t|-- load_cam time: ", load_cam_time_accum)
+    print("\t \t|-- load_cam time: ", lr_time_accum)
     print("\t \t|-- render time: ", render_time_accum)
     print("\t \t|-- loss time: ", loss_time_accum)
     print("\t \t|-- loss cal time: ", loss_cal_time)
@@ -226,11 +223,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t \t|-- radii time: ", radii_time_accum)
     print("\t \t|-- tensorboard time: ", tensorboard_time_accum)
     print("\t \t|-- other logging time: ", logging_time_accum - tqdm_time_accum - tensorboard_time_accum)
-    sparsity = torch.tensor(sparsity)
-
-    print(sparsity.min().item(),sparsity.max().item(),sparsity.mean().item(),sparsity.median().item())
-    print(sparsity.argmin(),sparsity.argmax())
-    torch.save(sparsity,'visibility.pth')
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -312,11 +304,14 @@ if __name__ == "__main__":
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
-
+    #torch.distributed.init_process_group(backend='nccl', world_size=4, init_method='...')
     # Start GUI server, configure and run training
     #network_gui.init(args.ip, args.port)
-    torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    #torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    #with profile(activities=[ProfilerActivity.CPU,ProfilerActivity.CUDA],
+        #profile_memory=True, record_shapes=True) as prof:
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
-
+    #with open('cuda-profile.txt','w') as f:
+        #f.writelines(prof.key_averages(group_by_stack_n=5).table(sort_by="self_cuda_time_total"))
     # All done
     print("\nTraining complete.")
