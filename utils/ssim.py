@@ -175,7 +175,7 @@ class SSIM(nn.Module):
         msssim = math.prod(ms_components)  # equ 7 in ref2
         return msssim
 
-    def _ssim(self, x, y):
+    def __ssim(self, x, y):
         mu_x = self.gaussian_filter(x)  # equ 14
         mu_y = self.gaussian_filter(y)  # equ 14
         
@@ -196,7 +196,27 @@ class SSIM(nn.Module):
         cs = A2 / B2
         ssim = l * cs
         return ssim
+    def _ssim(self, x, y):
+        mu_x = self.gaussian_filter(x)  # equ 14
+        mu_y = self.gaussian_filter(y)  # equ 14
+        
+        mu_xx = mu_x.pow(2)
+        mu_xy = torch.multiply(mu_x,mu_y)
+        mu_yy = mu_y.pow(2)
+        sigma2_x = torch.add(self.gaussian_filter(x.pow(2)),mu_xx,alpha=-1)  # equ 15
+        sigma2_y = torch.add(self.gaussian_filter(y.pow(2)),mu_yy,alpha=-1)  # equ 15
+        sigma_xy = torch.add(self.gaussian_filter(torch.multiply(x,y)),mu_xy,alpha=-1) # equ 16
 
+        A1 = torch.add(2*mu_xy,self.C1)
+        A2 =torch.add(2*sigma_xy,self.C2)
+        B1 = torch.add(torch.add(mu_xx,mu_yy),self.C1)
+        B2 = torch.add(torch.add(sigma2_x,sigma2_y),self.C2)
+
+        # equ 12, 13 in ref1
+        l = torch.div(A1, B1)
+        cs = torch.div(A2, B2)
+        ssim = torch.multiply(l,cs)
+        return ssim
 
 def ssim(
     x,

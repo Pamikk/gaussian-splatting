@@ -31,7 +31,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 l1_loss = torch.nn.L1Loss()
-
+accum=1
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     ssim = SSIM()#torch.nn.DataParallel(SSIM())
@@ -134,11 +134,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_cal_time += time.time() - loss_time
         loss.backward()
         cur_loss = loss.item()
-        torch.cuda.synchronize()
-        loss_time_accum += time.time() - loss_time
+        
+        
         
         iter_end.record()
+        torch.cuda.synchronize()
+        loss_time_accum += time.time() - loss_time
+        cuda_time_single = iter_start.elapsed_time(iter_end)
+        cuda_time +=cuda_time_single
         
+            
         
         
         train_end = time.time()
@@ -146,7 +151,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         with torch.no_grad():
             # Progress bar
-            logging_time = time.time()
             tqdm_time = time.time()
             ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
             #torch.cuda.synchronize()
@@ -157,15 +161,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration == opt.iterations:
                 progress_bar.close()
             tqdm_time_accum += time.time() - tqdm_time
-            cuda_time_single = iter_start.elapsed_time(iter_end)
-            cuda_time +=cuda_time_single
             
             
 
             # Log and save
-            tensorboard_time = time.time()
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time_single, testing_iterations, scene, render, (pipe, background))
-            tensorboard_time_accum += time.time() - tensorboard_time
 
             if (iteration in saving_iterations):
                 print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
@@ -173,10 +173,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
-            logging_time_accum += time.time() - logging_time
 
             # Densification
-            densify_time = time.time()
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
                 radii_time = time.time()
@@ -191,17 +189,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
-            densify_time_accum += time.time() - densify_time
-            optimize_time = time.time()
             # Optimizer step
-            if iteration < opt.iterations:
+            if (iteration < opt.iterations) and (iteration % accum ==0):
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
-            optimize_time_accum += time.time() - optimize_time
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-        total_time_accum += time.time() - total_time
     print("|")
     print(" | total: ", total_time_accum)
     print("\t |")
