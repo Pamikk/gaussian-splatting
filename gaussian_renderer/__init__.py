@@ -81,7 +81,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     else:
         colors_precomp = override_color
     #print(means3D,means2D,shs,colors_precomp,opacity,scales,rotations,cov3D_precomp)
-    # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+    # Rasterize visible Gaussians to image, obtain their radii (on screen).
+    #print(means3D.shape,shs.shape,opacity.shape,scales.shape,rotations.shape)
+    #torch.Size([206613, 3]) torch.Size([206613, 16, 3]) torch.Size([206613, 1]) torch.Size([206613, 3]) torch.Size([206613, 4])
     rendered_image, radii = rasterizer(
         means3D = means3D, #xyz
         means2D = means2D, #zeros with same shape as xyz
@@ -96,5 +98,5 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
-            "visibility_filter" : radii > 0,
+            "visibility_filter" : radii>0,
             "radii": radii}

@@ -60,23 +60,23 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
     def to(self,device="cuda:0"):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
+        self._xyz,
+        self._features_dc,
         self._features_rest,
-        self._scaling, 
-        self._rotation, 
+        self._scaling,
+        self._rotation,
         self._opacity,
-        self.max_radii2D, 
-        self.spatial_lr_scale) = self.active_sh_degree.to(device), 
-        self._xyz.to(device), 
-        self._features_dc.to(device), 
+        self.max_radii2D,
+        self.xyz_gradient_accum,
+        self.denom=self._xyz.to(device),
+        self._features_dc.to(device),
         self._features_rest.to(device),
-        self._scaling.to(device), 
-        self._rotation.to(device), 
+        self._scaling.to(device),
+        self._rotation.to(device),
         self._opacity.to(device),
-        self.max_radii2D.to(device), 
-        self.spatial_lr_scale.to(device)
+        self.max_radii2D.to(device),
+        self.xyz_gradient_accum.to(device),
+        self.denom.to(device)
     def capture(self):
         return [
             self.active_sh_degree,

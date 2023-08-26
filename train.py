@@ -125,7 +125,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         render_time_accum += time.time() - render_time
-
+        print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
