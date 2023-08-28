@@ -76,9 +76,9 @@ class Scene:
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
         if self.loaded_iter:
-            start = time.time()
-            self.gaussians.load_ply(os.path.join(self.model_path,"point_cloud","iteration_" + str(self.loaded_iter),"point_cloud.ply"))
-            print(f'ply time:{time.time()-start}')
+            #start = time.time()
+            #self.gaussians.load_ply(os.path.join(self.model_path,"point_cloud","iteration_" + str(self.loaded_iter),"point_cloud.ply"))
+            #print(f'ply time:{time.time()-start}')
             start = time.time()
             (model_params, _) = torch.load(self.model_path + "/render" + str(self.loaded_iter) + ".pth")
             gaussians.restore_no_training_args(model_params)
