@@ -8,4 +8,5 @@
 + gradiant operations?
 + radii - check if sparse?
   + sparse
-  + but mainly bc cuda synchronize problem - loss backward.
+  + but mainly bc cuda synchronize problem - loss backward
++ sparse point cloud -> sdf,geometric surface prior to help Guassian splatting get a better initialization
