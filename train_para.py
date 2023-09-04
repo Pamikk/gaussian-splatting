@@ -49,7 +49,7 @@ def train(iteration,pipe,background,opt,rank,viewpoint_cam,gaussians,logs,lock,l
     render_pkg = render(viewpoint_cam, gaussians, pipe, background)
     image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
     render_time = time.time() - render_time
-    print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
+    #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
     # Loss
     loss_time = time.time()
     gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
@@ -58,13 +58,12 @@ def train(iteration,pipe,background,opt,rank,viewpoint_cam,gaussians,logs,lock,l
     loss_cal_time = time.time() - loss_time
     loss.backward()
 
-    torch.cuda.synchronize()
     cur_loss = loss.item()
     loss_time = time.time() - loss_time
     train_time = time.time() - train_start
     
     with torch.no_grad():
-        lock.require()
+        lock.acquire()
         ema_loss_for_log,train_time_accum,loss_cal_time_accum,loss_time_accum,cuda_time_accum,densify_time_accum,optimize_time_accum,_,_ = logs
         # Progress bar
         ema_loss_for_log = logs[0]
@@ -95,10 +94,10 @@ def train(iteration,pipe,background,opt,rank,viewpoint_cam,gaussians,logs,lock,l
         gaussians.optimizer.zero_grad(set_to_none = True)
     optimize_time = time.time() - optimize_time
     
-    lock_log.acquire()
+    #lock_log.acquire()
     logs = [ema_loss_for_log,train_time_accum+train_time,loss_cal_time_accum+loss_cal_time,loss_time_accum+loss_time,cuda_time_accum+0,densify_time_accum+densify_time,optimize_time_accum+optimize_time]
-    lock_log.release()
-    return gaussians
+    #lock_log.release()
+    return ema_loss_for_log
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     #torch.nn.DataParallel(SSIM())
@@ -143,7 +142,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     processes=[]
     lock_log = mp.Lock()
     lock = mp.Lock()
-    
+    print(accum)
     for iteration in range(first_iter, opt.iterations + 1):
         total_time = time.time()
         # Pick a random Camera
@@ -152,22 +151,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             viewpoint_stack = list(range(len(viewpoint_cam_stack)))
         viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
         rank = iteration % accum
-        if accum==1:
-            gaussians = train(iteration,pipe,background,opt,0,viewpoint_cam,gaussians,logs,lock,lock_log)
-        if len(processes)<=4:
-            p = mp.Process(target=train, args=(iteration,pipe,background,opt,rank,viewpoint_cam.to_device(rank),gaussians,logs,lock,lock_log),)
+        #if accum==1:
+            #gaussians = train(iteration,pipe,background,opt,0,viewpoint_cam,gaussians,logs,lock,lock_log)
+        if len(processes)<accum:
+            viewpoint_cam.to_device(rank)
+            p = mp.Process(target=train, args=(iteration,pipe,background,opt,rank,viewpoint_cam,gaussians,logs,lock,lock_log),)
             p.start()
             processes.append(p)
-        if len(processes)==4:
+        if len(processes)==accum:
             for p in processes:
-                p.join()   
+                ema_loss_for_log = p.join()   
             with torch.no_grad():                
                 if (iteration in checkpoint_iterations):
                     print("\n[ITER {}] Saving Checkpoint".format(iteration))
                     torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
             processes =[]
         ema_loss_for_log = logs[0]
-        if iteration % 60 == 0:
+        if iteration % 10 == 0:
             progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
             progress_bar.update(10)
         if iteration == opt.iterations:
@@ -183,7 +183,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if checkpoint:
             (model_params, first_iter) = torch.load(checkpoint)
             gaussians.restore(model_params, opt)
-        
+        total_time_accum += time.time()-total_time
 
     print("|")
     print(" | total: ", total_time_accum)

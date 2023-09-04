@@ -23,14 +23,31 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 import time
 import gc
 from tqdm import tqdm
+class GaussianTensor(nn.Module):
+    def __init__(self, sh_degree : int):
+        super(GaussianTensor, self).__init__()
+        self.active_sh_degree = 0
+        self.max_sh_degree = sh_degree  
+        self._xyz = torch.empty(0)
+        self._features_dc = torch.empty(0)
+        self._features_rest = torch.empty(0)
+        self._scaling = torch.empty(0)
+        self._rotation = torch.empty(0)
+        self._opacity = torch.empty(0)
+        self.max_radii2D = torch.empty(0)
+        self.xyz_gradient_accum = torch.empty(0)
+        self.denom = torch.empty(0)
+        self.optimizer = None
+        self.percent_dense = 0
+        self.spatial_lr_scale = 0
+def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
+    L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+    actual_covariance = L @ L.transpose(1, 2)
+    symm = strip_symmetric(actual_covariance)
+    return symm
 class GaussianModel(nn.Module):
 
     def setup_functions(self):
-        def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
-            L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-            actual_covariance = L @ L.transpose(1, 2)
-            symm = strip_symmetric(actual_covariance)
-            return symm
         
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
@@ -196,7 +213,7 @@ class GaussianModel(nn.Module):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
-                lr = self.xyz_scheduler_args(iteration)
+                lr = self.xyz_scheduler_args.helper(iteration)
                 param_group['lr'] = lr
                 return lr
 

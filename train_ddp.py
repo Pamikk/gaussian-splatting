@@ -70,85 +70,85 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_cam_stack = scene.getTrainCameras().copy()
     loss_cal_time=0
     logs = [ema_loss_for_log,train_time_accum,loss_cal_time_accum,loss_time_accum,cuda_time_accum,densify_time_accum,optimize_time_accum]
-    gaussians.shared_memory()
+    gaussians.share_memory()
     def train_one_iter(iteration,viewpoint_cam,gaussians,logs,lock):    
-            iter_start.record()
-            train_start = time.time()
+        iter_start.record()
+        train_start = time.time()
 
-            gaussians.update_learning_rate(iteration)
-            # Every 1000 its we increase the levels of SH up to a maximum degree
-            if iteration % 1000 == 0:
-                gaussians.oneupSHdegree()
+        gaussians.update_learning_rate(iteration)
+        # Every 1000 its we increase the levels of SH up to a maximum degree
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
 
-            # Render
-            render_time = time.time()
-            #if (iteration - 1) == debug_from:
-                #pipe.debug = True
-            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-            render_time = time.time() - render_time
-            print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
-            # Loss
-            loss_time = time.time()
-            gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
-            Ll1 = l1_loss(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-            loss_cal_time = time.time() - loss_time
-            loss.backward()
+        # Render
+        render_time = time.time()
+        #if (iteration - 1) == debug_from:
+            #pipe.debug = True
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        render_time = time.time() - render_time
+        print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
+        # Loss
+        loss_time = time.time()
+        gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
+        Ll1 = l1_loss(image, gt_image)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        loss_cal_time = time.time() - loss_time
+        loss.backward()
 
-            iter_end.record()
-            torch.cuda.synchronize()
-            cur_loss = loss.item()
-            loss_time = time.time() - loss_time
-            cuda_time = iter_start.elapsed_time(iter_end)
-            train_time = time.time() - train_start
+        iter_end.record()
+        torch.cuda.synchronize()
+        cur_loss = loss.item()
+        loss_time = time.time() - loss_time
+        cuda_time = iter_start.elapsed_time(iter_end)
+        train_time = time.time() - train_start
+        
+        with torch.no_grad():
+            lock.require()
+            # Progress bar
+            ema_loss_for_log = logs[0]
+            ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
+            #torch.cuda.synchronize()
             
-            with torch.no_grad():
-                lock.require()
-                # Progress bar
-                ema_loss_for_log = logs[0]
-                ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
-                #torch.cuda.synchronize()
+            if iteration % 60 == 0:
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
+                progress_bar.update(10)
+            if iteration == opt.iterations:
+                progress_bar.close()
+            # Log and save
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time, testing_iterations, scene, render, (pipe, background))
+
+            if (iteration in saving_iterations):
+                print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
+                print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
                 
-                if iteration % 60 == 0:
-                    progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
-                    progress_bar.update(10)
-                if iteration == opt.iterations:
-                    progress_bar.close()
-                # Log and save
-                training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time, testing_iterations, scene, render, (pipe, background))
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene.save(iteration)
+            densify_time =time.time()
+            # Densification
+            if iteration < opt.densify_until_iter:
+                # Keep track of max radii in image-space for pruning
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])                    
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if (iteration in saving_iterations):
-                    print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
-                    print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
-                    
-                    print("\n[ITER {}] Saving Gaussians".format(iteration))
-                    scene.save(iteration)
-                densify_time =time.time()
-                # Densification
-                if iteration < opt.densify_until_iter:
-                    # Keep track of max radii in image-space for pruning
-                    gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])                    
-                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                    
-                    if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                        gaussians.reset_opacity()
-                densify_time =time.time() -densify_time
-                optimize_time = time.time()
-                # Optimizer step
-                if (iteration < opt.iterations) and (iteration % accum ==0):
-                    gaussians.optimizer.step()
-                    gaussians.optimizer.zero_grad(set_to_none = True)
-                optimize_time = time.time() - optimize_time
-                if (iteration in checkpoint_iterations):
-                    print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                    torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-            logs = [ema_loss_for_log]
-            lock.release()
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
+            densify_time =time.time() -densify_time
+            optimize_time = time.time()
+            # Optimizer step
+            if (iteration < opt.iterations) and (iteration % accum ==0):
+                gaussians.optimizer.step()
+                gaussians.optimizer.zero_grad(set_to_none = True)
+            optimize_time = time.time() - optimize_time
+            if (iteration in checkpoint_iterations):
+                print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        logs = [ema_loss_for_log]
+        lock.release()
     for iteration in range(first_iter, opt.iterations + 1):
         total_time = time.time()
         # Pick a random Camera

@@ -31,10 +31,13 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 l1_loss = torch.nn.L1Loss()
+ssim = SSIM()#torch.nn.DataParallel(SSIM())
 accum=1
+add_ssim_after_iters = 15000
+add_ssim_after = True
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
-    ssim = SSIM()#torch.nn.DataParallel(SSIM())
+    print(f'add ssim after{add_ssim_after}:{add_ssim_after_iters}')
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -85,7 +88,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     sparsity = []
     loss_cal_time=0
     for iteration in range(first_iter, opt.iterations + 1):     
-        total_time = time.time()   
+        total_time = time.time()
+        if (iteration > add_ssim_after_iters)and(add_ssim_after):
+            opt.lambda_dssim = 0
+        elif (iteration < add_ssim_after_iters) and (not add_ssim_after):
+            opt.lambda_ssim = 0  
         '''if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
@@ -105,18 +112,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         train_start = time.time()
 
         gaussians.update_learning_rate(iteration)
-        lr_time_accum += time.time()-train_start
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        load_cam_time = time.time()
         # Pick a random Camera
         if not viewpoint_stack:
             #viewpoint_stack = scene.getTrainCameras().copy()
             viewpoint_stack = list(range(len(viewpoint_cam_stack)))
         viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
-        load_cam_time_accum += time.time() - load_cam_time
 
         # Render
         render_time = time.time()
@@ -125,6 +129,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         render_time_accum += time.time() - render_time
+        torch.cuda.synchronize()
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
@@ -151,7 +156,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         with torch.no_grad():
             # Progress bar
-            tqdm_time = time.time()
             ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
             #torch.cuda.synchronize()
             
@@ -160,7 +164,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
-            tqdm_time_accum += time.time() - tqdm_time
             
             
 
@@ -173,7 +176,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
-
+            densify_time = time.time()
             # Densification
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
@@ -189,34 +192,33 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
+            #torch.cuda.synchronize()
+            densify_time_accum += time.time()- densify_time
+        optimize_time = time.time()
         # Optimizer step
-        if (iteration < opt.iterations) and (iteration % accum ==0):
+        if (iteration < opt.iterations):
             gaussians.optimizer.step()
             gaussians.optimizer.zero_grad(set_to_none = True)
+            torch.cuda.synchronize()
+        optimize_time_accum += time.time() - optimize_time
         if (iteration in checkpoint_iterations):
             print("\n[ITER {}] Saving Checkpoint".format(iteration))
             torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        total_time_accum += time.time()-total_time
     print("|")
     print(" | total: ", total_time_accum)
     print("\t |")
     print("\t |-- training (total): ", train_time_accum)
-    print("\t \t|-- load_cam time: ", load_cam_time_accum)
-    print("\t \t|-- load_cam time: ", lr_time_accum)
     print("\t \t|-- render time: ", render_time_accum)
     print("\t \t|-- loss time: ", loss_time_accum)
     print("\t \t|-- loss cal time: ", loss_cal_time)
     print("\t \t|-- cuda time: ", cuda_time/1000)
-    print("\t \t|-- other training time: ", train_time_accum - load_cam_time_accum - render_time_accum - loss_time_accum)
+    print("\t \t|-- other training time: ", train_time_accum - render_time_accum - loss_time_accum)
     print("\t |")
     print("\t |-- densify: ", densify_time_accum)
     print("\t |")
     print("\t |-- optimize: ", optimize_time_accum)
     print("\t |")
-    print("\t |-- logging (total): ", logging_time_accum)
-    print("\t \t|-- tqdm time: ", tqdm_time_accum)
-    print("\t \t|-- radii time: ", radii_time_accum)
-    print("\t \t|-- tensorboard time: ", tensorboard_time_accum)
-    print("\t \t|-- other logging time: ", logging_time_accum - tqdm_time_accum - tensorboard_time_accum)
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -287,10 +289,10 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000,15_000,20_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000,20_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[20_000])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
