@@ -88,6 +88,9 @@ class Scene:
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
+        if not os.path.exists(point_cloud_path):
+            os.makedirs(point_cloud_path)
+            #to leverage the last iter search
         start = time.time()
         torch.save((self.gaussians.capture_4render(), iteration), self.model_path + "/render" + str(iteration) + ".pth")
         print(f'tensor dict time:{time.time()-start}')

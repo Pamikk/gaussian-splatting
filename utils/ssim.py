@@ -29,6 +29,7 @@ class GaussianFilter2D(nn.Module):
         if ensemble_kernel:
             kernel = self._get_gaussian_window2d(kernel)
         self.register_buffer(name="gaussian_window", tensor=kernel.repeat(in_channels, 1, 1, 1))
+        self.gaussian_window = self.gaussian_window.float().cuda()
 
     def _get_gaussian_window1d(self):
         sigma2 = self.sigma * self.sigma
@@ -119,8 +120,8 @@ class SSIM(nn.Module):
         """
         super().__init__()
         self.window_size = window_size
-        self.C1 = (K1 * L) ** 2  # equ 7 in ref1
-        self.C2 = (K2 * L) ** 2  # equ 7 in ref1
+        self.C1 = torch.tensor((K1 * L) ** 2).float().cuda()  # equ 7 in ref1
+        self.C2 = torch.tensor((K2 * L) ** 2).float().cuda() # equ 7 in ref1
         self.keep_batch_dim = keep_batch_dim
         self.return_log = return_log
         self.return_msssim = return_msssim
@@ -145,12 +146,16 @@ class SSIM(nn.Module):
         """
         assert x.shape == y.shape, f"x: {x.shape} and y: {y.shape} must be the same"
         #assert x.ndim == y.ndim == 4, f"x: {x.ndim} and y: {y.ndim} must be 4"
-        if x.type() != self.gaussian_filter.gaussian_window.type():
+        '''if x.type() != self.gaussian_filter.gaussian_window.type():
             self.gaussian_filter.gaussian_window = self.gaussian_filter.gaussian_window.type_as(x)
+        if x.type() != self.C1.type():
+            self.C1= self.C1.type_as(x)
+        if x.type() != self.C2.type():
+            self.C2= self.C2.type_as(x)'''
         return self.ssim(x, y)
 
     def ssim(self, x, y):
-        ssim= self._ssim(x, y)
+        ssim= self._ssim(self.gaussian_filter.gaussian_window,x, y,self.C1,self.C2)
         return ssim.mean()
 
     def msssim(self, x, y):
@@ -174,7 +179,7 @@ class SSIM(nn.Module):
                 y = F.avg_pool2d(y, kernel_size=2, stride=2, padding=padding)
         msssim = math.prod(ms_components)  # equ 7 in ref2
         return msssim
-
+    
     def __ssim(self, x, y):
         mu_x = self.gaussian_filter(x)  # equ 14
         mu_y = self.gaussian_filter(y)  # equ 14
@@ -196,21 +201,22 @@ class SSIM(nn.Module):
         cs = A2 / B2
         ssim = l * cs
         return ssim
-    def _ssim(self, x, y):
-        mu_x = self.gaussian_filter(x)  # equ 14
-        mu_y = self.gaussian_filter(y)  # equ 14
+    @torch.jit.script
+    def _ssim(window,x, y,C1,C2):
+        mu_x = F.conv2d(input=x, weight=window, stride=1, padding=5, groups=x.shape[-3])  # equ 14
+        mu_y = F.conv2d(input=y, weight=window, stride=1, padding=5, groups=x.shape[-3])  # equ 14
         
         mu_xx = mu_x.pow(2)
         mu_xy = torch.multiply(mu_x,mu_y)
         mu_yy = mu_y.pow(2)
-        sigma2_x = torch.add(self.gaussian_filter(x.pow(2)),mu_xx,alpha=-1)  # equ 15
-        sigma2_y = torch.add(self.gaussian_filter(y.pow(2)),mu_yy,alpha=-1)  # equ 15
-        sigma_xy = torch.add(self.gaussian_filter(torch.multiply(x,y)),mu_xy,alpha=-1) # equ 16
+        sigma2_x = torch.add(F.conv2d(input=x.pow(2), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_xx,alpha=-1)  # equ 15
+        sigma2_y = torch.add(F.conv2d(input=y.pow(2), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_yy,alpha=-1)  # equ 15
+        sigma_xy = torch.add(F.conv2d(input=torch.multiply(x,y), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_xy,alpha=-1) # equ 16
 
-        A1 = torch.add(2*mu_xy,self.C1)
-        A2 =torch.add(2*sigma_xy,self.C2)
-        B1 = torch.add(torch.add(mu_xx,mu_yy),self.C1)
-        B2 = torch.add(torch.add(sigma2_x,sigma2_y),self.C2)
+        A1 = torch.add(2*mu_xy,C1)
+        A2 =torch.add(2*sigma_xy,C2)
+        B1 = torch.add(torch.add(mu_xx,mu_yy),C1)
+        B2 = torch.add(torch.add(sigma2_x,sigma2_y),C2)
 
         # equ 12, 13 in ref1
         l = torch.div(A1, B1)

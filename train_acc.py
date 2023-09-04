@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+#from utils.loss_utils import l1_loss, ssim
 from utils.ssim import SSIM
 from gaussian_renderer import render, network_gui
 import sys
@@ -25,16 +25,17 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from torch.profiler import profile, record_function, ProfilerActivity
 import time
+from multiprocessing import Process
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
-#l1_loss = torch.nn.L1Loss()
-accum=1
+l1_loss = torch.nn.L1Loss()
+accum=4
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
-    #ssim = SSIM()#torch.nn.DataParallel(SSIM())
+    ssim = SSIM()#torch.nn.DataParallel(SSIM())
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -66,7 +67,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     optimize_time = 0
 
     def train_one_iter(iteration,viewpoint_cam,gaussians,logs):
-        ema_loss_for_log,train_time_accum,cuda_time,loss_cal_time_acc,render_time_accum = logs
+        #ema_loss_for_log,train_time_accum,cuda_time,loss_cal_time_acc,render_time_accum = logs
         #iter_start.record()
         train_start = time.time()
         gaussians.update_learning_rate(iteration)
@@ -77,30 +78,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         torch.cuda.synchronize()
-        render_time_accum += time.time() - render_time
+        logs[4] += time.time() - render_time
 
         # Loss
         loss_time = time.time()
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        loss = (1.0 - opt.lambda_dssim) * Ll1 #+ opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         torch.cuda.synchronize()
-        loss_cal_time_acc += time.time() - loss_time   
+        logs[3] += time.time() - loss_time   
         
         
         #iter_end.record()
         cuda_time_single = 0#iter_start.elapsed_time(iter_end)
-        cuda_time +=cuda_time_single
-        
-            
-        
-        
-        train_end = time.time()
-        
-        
+        logs[2] +=cuda_time_single
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            logs[0] = 0.4 * loss.item() + 0.6 *logs[0]
+            ema_loss_for_log = logs[0]
             #torch.cuda.synchronize()
             
             if iteration % 10 == 0:
@@ -110,8 +105,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close() 
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time_single, testing_iterations, scene, render, (pipe, background))
-        logs = [ema_loss_for_log,train_time_accum,cuda_time,loss_cal_time_acc,render_time_accum]
-        train_time_accum += train_end - train_start
+        
+        train_end = time.time()
+        logs[1]+= train_end - train_start
+        #logs = [ema_loss_for_log,train_time_accum,cuda_time,loss_cal_time_acc,render_time_accum]
         return viewspace_point_tensor, visibility_filter, radii,gaussians,loss,logs
     buffer =[]
     logs = [ema_loss_for_log,train_time_accum,cuda_time,loss_cal_time_acc,render_time_accum]   
@@ -129,12 +126,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewpoint_cam = viewpoint_cam_stack[viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))]
         viewspace_point_tensor, visibility_filter, radii,gaussians,loss,logs = train_one_iter(iteration,viewpoint_cam,gaussians,logs)
         buffer.append([iteration,viewspace_point_tensor,visibility_filter,radii])
-        loss_time = time.time()
-        #losses = losses/4.0
-        loss.backward()
-        torch.cuda.synchronize()
-        loss_time_accum += time.time()-loss_time
-        #losses+=loss
+        
+        
+        losses+=loss
         if (iteration in saving_iterations):
             print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
             print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
@@ -142,6 +136,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             print("\n[ITER {}] Saving Gaussians".format(iteration))
             scene.save(iteration)
         if (iteration % accum ==0):
+            loss_time = time.time()
+            losses = losses/4.0
+            losses.backward()
+            torch.cuda.synchronize()
+            loss_time_accum += time.time()-loss_time
             start = time.time()
             for (iteration,viewspace_point_tensor, visibility_filter, radii) in buffer:
                 # Densification
@@ -252,8 +251,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000,15_000,20_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10,10_000, 20_000,30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[20_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
