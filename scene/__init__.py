@@ -79,14 +79,17 @@ class Scene:
             #start = time.time()
             #self.gaussians.load_ply(os.path.join(self.model_path,"point_cloud","iteration_" + str(self.loaded_iter),"point_cloud.ply"))
             #print(f'ply time:{time.time()-start}')
-            start = time.time()
-            (model_params, _) = torch.load(self.model_path + "/render" + str(self.loaded_iter) + ".pth")
-            gaussians.restore_no_training_args(model_params)
-            print(f'tensor dict time:{time.time()-start}')          
+            if os.path.exists(self.model_path + "/render" + str(self.loaded_iter) + ".pth"):
+                start = time.time()
+                (model_params, _) = torch.load(self.model_path + "/render" + str(self.loaded_iter) + ".pth")
+                gaussians.restore_no_training_args(model_params)
+                print(f'tensor dict time:{time.time()-start}')          
+            else:
+                self.gaussians.load_ply(os.path.join(self.model_path,"point_cloud","iteration_" + str(self.loaded_iter),"point_cloud.ply"))
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
-    def save(self, iteration):
+    def save(self, iteration,save_ply=False):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         if not os.path.exists(point_cloud_path):
             os.makedirs(point_cloud_path)
@@ -94,9 +97,10 @@ class Scene:
         start = time.time()
         torch.save((self.gaussians.capture_4render(), iteration), self.model_path + "/render" + str(iteration) + ".pth")
         print(f'tensor dict time:{time.time()-start}')
-        #start = time.time()
-        #self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        #print(f'ply time:{time.time()-start}')
+        if save_ply:
+            start = time.time()
+            self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+            print(f'save ply time:{time.time()-start}')
         
 
     def getTrainCameras(self, scale=1.0):

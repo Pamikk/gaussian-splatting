@@ -123,6 +123,7 @@ class GaussianModel(nn.Module):
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
     def restore_no_training_args(self, model_args):
+        
         (self.active_sh_degree, 
         self._xyz, 
         self._features_dc, 
@@ -132,6 +133,7 @@ class GaussianModel(nn.Module):
         self._opacity,
         self.max_radii2D, 
         self.spatial_lr_scale) = model_args
+        print(self._xyz.shape)
 
     @property
     def get_scaling(self):
@@ -261,15 +263,14 @@ class GaussianModel(nn.Module):
         #normals = np.zeros_like(xyz)
         f_dc = np.array_split(self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy(),split_n,axis=0)
         f_rest = np.array_split(self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy(),split_n,axis=0)
+        print(self._features_rest.shape)
         opacities = np.array_split(self._opacity.detach().cpu().numpy(),split_n,axis=0)
         scale = np.array_split(self._scaling.detach().cpu().numpy(),split_n,axis=0)
         rotation = np.array_split(self._rotation.detach().cpu().numpy(),split_n,axis=0)
-        print('start detaching')
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(N, dtype=dtype_full)
         #attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-        print('start detaching1')
         #els = []
         sizes = [i.shape[0] for i in xyz]
         indices=[0]+sizes
@@ -330,7 +331,7 @@ class GaussianModel(nn.Module):
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
-        print(features_dc.shape)
+        #print(features_dc.shape)
         del(features_dc)
 
         extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
@@ -343,14 +344,14 @@ class GaussianModel(nn.Module):
             features_extra[:, idx] = torch.tensor(np.asarray(plydata.elements[0][attr_name]), dtype=torch.float, device="cuda")
         # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
         features_extra = features_extra.reshape(N,3,(self.max_sh_degree + 1) ** 2 - 1).contiguous()
-        print('finish reshape')
+        #print('finish reshape')
         del(extra_f_names)
         gc.collect()
         self._features_rest = nn.Parameter(features_extra.transpose(1, 2).contiguous().requires_grad_(True))
         
         del(features_extra)
         gc.collect()        
-        print('feature_extra')
+        #print('feature_extra')
         
 
         scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
@@ -361,7 +362,7 @@ class GaussianModel(nn.Module):
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         del(scales)
         del(scale_names)
-        print('scales')
+        #print('scales')
         
         rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
         rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
@@ -370,9 +371,9 @@ class GaussianModel(nn.Module):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
         
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
-        print('rotations')
+        #print('rotations')
         self.active_sh_degree = self.max_sh_degree
-        print(f'{time.time()-start}')
+        print(f'load ply time:{time.time()-start}')
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:

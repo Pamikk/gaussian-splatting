@@ -33,11 +33,11 @@ except ImportError:
 l1_loss = torch.nn.L1Loss()
 ssim = SSIM()#torch.nn.DataParallel(SSIM())
 accum=1
-add_ssim_after_iters = 15000
-add_ssim_after = True
+rm_ssim_after_iters = 30000
+rm_ssim_after = True
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
-    print(f'add ssim after{add_ssim_after}:{add_ssim_after_iters}')
+    print(f'remove ssim after{rm_ssim_after}:{rm_ssim_after_iters}')
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -89,10 +89,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     loss_cal_time=0
     for iteration in range(first_iter, opt.iterations + 1):     
         total_time = time.time()
-        if (iteration > add_ssim_after_iters)and(add_ssim_after):
-            opt.lambda_dssim = 0
-        elif (iteration < add_ssim_after_iters) and (not add_ssim_after):
-            opt.lambda_ssim = 0  
+         
         '''if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
@@ -135,7 +132,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_time = time.time()
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
+            loss = Ll1
+        elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
+            loss = Ll1
+        else:
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss_cal_time += time.time() - loss_time
         loss.backward()
         cur_loss = loss.item()
@@ -205,6 +207,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             print("\n[ITER {}] Saving Checkpoint".format(iteration))
             torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
         total_time_accum += time.time()-total_time
+    print("\n[ITER {}] Saving Gaussians".format(iteration))
+    scene.save(iteration)
     print("|")
     print(" | total: ", total_time_accum)
     print("\t |")
@@ -289,8 +293,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000,20_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)

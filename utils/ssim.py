@@ -203,15 +203,18 @@ class SSIM(nn.Module):
         return ssim
     @torch.jit.script
     def _ssim(window,x, y,C1,C2):
-        mu_x = F.conv2d(input=x, weight=window, stride=1, padding=5, groups=x.shape[-3])  # equ 14
-        mu_y = F.conv2d(input=y, weight=window, stride=1, padding=5, groups=x.shape[-3])  # equ 14
+        s = window.shape[-1]
+        ss =    1
+        pad = s//2
+        mu_x = F.conv2d(input=x, weight=window, stride=ss, padding=pad, groups=x.shape[-3])  # equ 14
+        mu_y = F.conv2d(input=y, weight=window, stride=ss, padding=pad, groups=x.shape[-3])  # equ 14
         
         mu_xx = mu_x.pow(2)
         mu_xy = torch.multiply(mu_x,mu_y)
         mu_yy = mu_y.pow(2)
-        sigma2_x = torch.add(F.conv2d(input=x.pow(2), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_xx,alpha=-1)  # equ 15
-        sigma2_y = torch.add(F.conv2d(input=y.pow(2), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_yy,alpha=-1)  # equ 15
-        sigma_xy = torch.add(F.conv2d(input=torch.multiply(x,y), weight=window, stride=1, padding=5, groups=x.shape[-3]),mu_xy,alpha=-1) # equ 16
+        sigma2_x = torch.add(F.conv2d(input=x.pow(2), weight=window, stride=ss, padding=pad, groups=x.shape[-3]),mu_xx,alpha=-1)  # equ 15
+        sigma2_y = torch.add(F.conv2d(input=y.pow(2), weight=window, stride=ss, padding=pad, groups=x.shape[-3]),mu_yy,alpha=-1)  # equ 15
+        sigma_xy = torch.add(F.conv2d(input=torch.multiply(x,y), weight=window, stride=ss, padding=pad,groups=x.shape[-3]),mu_xy,alpha=-1) # equ 16
 
         A1 = torch.add(2*mu_xy,C1)
         A2 =torch.add(2*sigma_xy,C2)
