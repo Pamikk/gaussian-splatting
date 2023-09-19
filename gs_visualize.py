@@ -74,8 +74,34 @@ def render_gs_to_ellipsoid(xyz,feat_dc,alpha,rot,scale):
 
 
 
-
-def render_sets(dataset : ModelParams, iteration=None):
+def sh_to_rgb(vertices,sh):
+	x = vertices[:,:1]
+	y = vertices[:,1:2]
+	z = vertices[:,2:3]
+	result = SH_C0 * sh[0]
+	result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3]
+	xx = x * x
+	yy = y * y
+	zz = z * z
+	xy = x * y 
+	yz = y * z
+	xz = x * z
+	result = result + SH_C2[0] * xy * sh[4] +\
+				SH_C2[1] * yz * sh[5] +\
+				SH_C2[2] * (2.0 * zz - xx - yy) * sh[6] +\
+				SH_C2[3] * xz * sh[7] +\
+				SH_C2[4] * (xx - yy) * sh[8]
+	result = result +\
+			SH_C3[0] * y * (3.0 * xx - yy) * sh[9] +\
+			SH_C3[1] * xy * z * sh[10] +\
+			SH_C3[2] * y * (4.0 * zz - xx - yy) * sh[11] +\
+			SH_C3[3] * z * (2.0 * zz - 3.0 * xx - 3.0 * yy) * sh[12] +\
+			SH_C3[4] * x * (4.0 * zz - xx - yy) * sh[13] +\
+			SH_C3[5] * z * (xx - yy) * sh[14] +\
+			SH_C3[6] * x * (xx - 3.0 * yy) * sh[15]
+	result += 0.5
+	return result
+def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
     with torch.no_grad():
         model_path = dataset.model_path
         gaussians = GaussianModel(dataset.sh_degree)
@@ -95,9 +121,15 @@ def render_sets(dataset : ModelParams, iteration=None):
             #gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
         
         xyzs = gaussians._xyz
+        distances = torch.sqrt(torch.norm(xyzs,p=2,dim=-1))
+        #print(np.percentile(distances,33),np.percentile(distances,66),np.percentile(distances,50),np.percentile(distances,25),np.percentile(distances,75),np.percentile(distances,99))
+        print(distances.mean())
+        threshold = np.percentile(distances.cpu().numpy(),30)
+        print(threshold)
         N = xyzs.shape[0]
         new_features_dc = gaussians._features_dc[:,0,:]
         new_features_rest = gaussians._features_rest
+        shs = torch.cat([gaussians._features_dc[:,:1,:],gaussians._features_rest[:,:,:]],dim=1)
         #colors = new_features_dc
 
 
@@ -106,55 +138,86 @@ def render_sets(dataset : ModelParams, iteration=None):
         
         scales = torch.exp(gaussians._scaling)
         rotations = quatToMat3(gaussians._rotation/torch.sqrt(gaussians._rotation*gaussians._rotation).sum(dim=-1,keepdim=True))
-        mask = torch.min(scales,dim=1)[0]*100
+        mask = torch.sqrt(torch.min(scales,dim=1)[0]*torch.max(scales,dim=1)[0])*1000
         print(mask.min(),mask.max(),mask.median())
         
-        idx = torch.sort(mask,descending=True)[1]
-        mask = opacities<0.2
-        #mask = mask>=2#torch.bitwise_and(mask>1,opacities<0.2)
-        mask = idx#[mask]
+        idx = torch.sort(distances)[1]
+        #mask = opacities<0.2
+        mask = torch.logical_and(mask>=2,opacities>opacity)
+        mask = idx[mask]
         xyzs = xyzs[mask,...]
         opacities=opacities[mask,...]
         scales = scales[mask,...]
         rotations = rotations[mask,...]
         new_features_dc = new_features_dc[mask,...]
+        distances = distances[mask]
         print(opacities.min(),opacities.max(),opacities.median())
         print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
         transform = np.eye(4)
         res = o3d.geometry.TriangleMesh()
-        chunk = 1000000
+        chunk = 4e7
         idx = 0
-        meshset=[]
         N = xyzs.shape[0]
+        mesh_fore = o3d.geometry.TriangleMesh()
+        mesh_back = o3d.geometry.TriangleMesh()
+        meshset_fore = []
+        meshset_back = []
+        n_gs = 0
         for i in tqdm(range(N)):
             scale = scales[i,:]
-            resolution = min(10,max(int(scale.min()*100),2))
-            if (resolution<=1):
-                break
-            mesh = o3d.geometry.TriangleMesh.create_sphere(radius=2.0, resolution=resolution)
-            np.fill_diagonal(transform[:3,:3],scale.cpu().numpy())
-            #print(transform)
-            mesh = mesh.transform(transform)
-            mesh = mesh.rotate(rotations[i,...].cpu().numpy().T)
-            mesh = mesh.translate(xyzs[i,...].cpu().numpy(),relative=False)
-            #alpha = opacities[i].item()
-            color = (SH_C0 * new_features_dc[i,...]+0.5)
-            #if alpha<0.2:
-                #continue
-            mesh.paint_uniform_color((color).clamp(0,1).cpu().numpy().tolist())
-            #mesh.compute_vertex_normals()
-            
-            '''res += mesh
-            if (i%chunk==0) and (i>0):
-                o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}.ply'),res)
-                res = o3d.geometry.TriangleMesh()
-                idx+=1'''
-            meshset.append(mesh)
+            val = torch.sqrt(scale.min()*scale.max())
+            resolution = min(10,int(val*4000))
+            if (resolution>=2)and(scale.min()>1e-3):
+                mesh = o3d.geometry.TriangleMesh.create_sphere(radius=2.0, resolution=resolution)
+                np.fill_diagonal(transform[:3,:3],scale.cpu().numpy())
+                if resolution > 6:
+                    vertices = torch.tensor(np.asarray(mesh.vertices)).cuda()
+                    mesh.vertex_colors = o3d.utility.Vector3dVector(sh_to_rgb(vertices/2,shs[i,...]).clamp(0,1).cpu().numpy())
+                else:
+                    color = (SH_C0 * new_features_dc[i,...]+0.5)
+                    mesh.paint_uniform_color((color).clamp(0,1).cpu().numpy().tolist())
+                #print(transform)
+                mesh = mesh.transform(transform)
+                mesh = mesh.rotate(rotations[i,...].cpu().numpy().T)
+                mesh = mesh.translate(xyzs[i,...].cpu().numpy(),relative=False)
+                #alpha = opacities[i].item()
+                
+                #if alpha<0.2:
+                    #continue
+                #mesh.compute_vertex_normals()
+                mesh.remove_duplicated_vertices()
+                mesh.remove_degenerate_triangles()
+                
+                #print(resolution,scale,np.asarray(mesh.vertices).shape,np.asarray(mesh.triangles).shape)
+                #exit()
+                res += mesh
+                ptn = np.asarray(res.vertices).shape[0]
+                '''if distances[i]<threshold:
+                    mesh_fore += mesh
+                else:
+                    mesh_back+=mesh'''
+                if (ptn>=chunk):
+                    res.remove_duplicated_triangles()
+                    o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{opacity}.ply'),res)
+                    print(np.asarray(res.vertices).shape,np.asarray(res.triangles).shape)                
+                    res = o3d.geometry.TriangleMesh()
+                    idx+=1
+                    '''mesh_fore.remove_duplicated_triangles()
+                    mesh_back.remove_duplicated_triangles()
+                    o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}.ply'),mesh_fore)
+                    o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}.ply'),mesh_back)
+                    mesh_fore = o3d.geometry.TriangleMesh()
+                    mesh_back = o3d.geometry.TriangleMesh()'''
+        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{opacity}.ply'),res)     
         #o3d.visualization.draw_geometries(meshset)
-        res= o3d.geometry.TriangleMesh()
-        for i in meshset:
-            res+=i
-        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}.ply'),res)
+        '''mesh_fore = o3d.geometry.TriangleMesh()
+        mesh_back = o3d.geometry.TriangleMesh()
+        for i in meshset_fore:
+            mesh_fore+=i
+        for i in meshset_back:
+            mesh_back+=i
+        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_fore_{opacity}.ply'),mesh_fore)
+        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_back_{opacity}.ply'),mesh_back)'''
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -164,10 +227,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--opacity", default=0.2, type=float)
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args))
+    render_sets(model.extract(args),opacity=args.opacity)

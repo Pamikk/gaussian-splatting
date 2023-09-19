@@ -30,6 +30,9 @@ try:
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+def project_3d_bbox(bbox,camera):
+    twodbbox = camera.intrinsic*camera.exitrinsic*bbox
+
 l1_loss = torch.nn.L1Loss()
 ssim = SSIM()#torch.nn.DataParallel(SSIM())
 accum=1
@@ -87,6 +90,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_cam_stack = scene.getTrainCameras().copy()
     sparsity = []
     loss_cal_time=0
+    bbox = torch.tensor(scene.stbbox).cuda()
     for iteration in range(first_iter, opt.iterations + 1):     
         total_time = time.time()
          
@@ -162,7 +166,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             #torch.cuda.synchronize()
             
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}"})
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:05f}","GS#": f"{gaussians._xyz.shape[0]}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -180,12 +184,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 scene.save(iteration)
             densify_time = time.time()
             # Densification
+            
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
                 radii_time = time.time()
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                bbox_filter = gaussians.get_inside_mask(bbox)
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter,bbox_filter)
                 radii_time_accum += time.time()-radii_time
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:

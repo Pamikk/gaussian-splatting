@@ -473,7 +473,7 @@ class GaussianModel(nn.Module):
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
-
+        #print(n_init_points)
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
         means =torch.zeros((stds.size(0), 3),device="cuda")
         samples = torch.normal(mean=means, std=stds)
@@ -484,7 +484,7 @@ class GaussianModel(nn.Module):
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
-
+        
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
@@ -502,7 +502,6 @@ class GaussianModel(nn.Module):
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
-
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
@@ -512,6 +511,7 @@ class GaussianModel(nn.Module):
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
 
+
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
@@ -520,7 +520,19 @@ class GaussianModel(nn.Module):
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
-
-    def add_densification_stats(self, viewspace_point_tensor, update_filter):
-        self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
+    def get_inside_mask(self,bbox):
+        xmin,ymin,zmin = bbox[0,...]
+        xmax,ymax,zmax = bbox[-1,...]
+        xmask = torch.logical_and(self._xyz[:,0]>xmin,self._xyz[:,0]<xmax)
+        ymask = torch.logical_and(self._xyz[:,1]>ymin,self._xyz[:,1]<ymax)
+        zmask = torch.logical_and(self._xyz[:,2]>zmin,self._xyz[:,2]<zmax)
+        return torch.logical_and(torch.logical_and(xmask,ymask),zmask)
+    def add_densification_stats(self, viewspace_point_tensor, update_filter,stereo_filter = None):
+        if stereo_filter is None:
+            self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
+        else:
+            inside_update = torch.logical_and(update_filter,stereo_filter)
+            outside_update = torch.logical_and(update_filter,~stereo_filter)
+            self.xyz_gradient_accum[inside_update] += torch.norm(viewspace_point_tensor.grad[inside_update,:2], dim=-1, keepdim=True)
+            self.xyz_gradient_accum[outside_update] += 0.5*torch.norm(viewspace_point_tensor.grad[outside_update,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1

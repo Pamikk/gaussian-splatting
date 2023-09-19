@@ -41,6 +41,7 @@ class SceneInfo(NamedTuple):
     test_cameras: list
     nerf_normalization: dict
     ply_path: str
+    stereobbox: np.array
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -168,12 +169,23 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         pcd = fetchPly(ply_path)
     except:
         pcd = None
-
+    xyz = pcd.points
+    xmin,xmax = np.percentile(xyz[:,0],33),np.percentile(xyz[:,0],66)
+    ymin,ymax = np.percentile(xyz[:,1],33),np.percentile(xyz[:,1],66)
+    zmin,zmax = np.percentile(xyz[:,2],33),np.percentile(xyz[:,2],66)
+    Stereobbox = np.array([
+        [xmin,ymin,zmin],[xmin,ymin,zmax],[xmin,ymax,zmin],[xmin,ymax,zmax],
+        [xmax,ymin,zmin],[xmax,ymin,zmax],[xmax,ymax,zmin],[xmax,ymax,zmax]
+    ])
+    '''for i in train_cam_infos:
+        i.add_bbox(Stereobbox)
+    for i in test_cam_infos:
+        i.add_bbox(Stereobbox)'''
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
-                           ply_path=ply_path)
+                           ply_path=ply_path,stereobbox = Stereobbox)
     return scene_info
 
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):
