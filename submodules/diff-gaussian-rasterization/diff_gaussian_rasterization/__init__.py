@@ -173,7 +173,7 @@ class GaussianRasterizer(nn.Module):
         super().__init__()
         self.raster_settings = raster_settings
 
-    def markVisible(self, positions):
+    def le(self, positions):
         # Mark visible points (based on frustum culling for camera) with a boolean 
         with torch.no_grad():
             raster_settings = self.raster_settings

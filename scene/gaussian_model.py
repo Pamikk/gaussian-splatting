@@ -520,6 +520,41 @@ class GaussianModel(nn.Module):
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+    def render_depth_map(self,camera,filter):
+        with torch.no_grad():
+            h,w =int(camera.image_height),int(camera.image_width),
+            xyzs = self.get_xyz[filter]
+            print(xyzs.min(),xyzs.max())
+            n = xyzs.shape[0]
+            xyzs = torch.cat([xyzs,torch.ones((n,1),dtype=xyzs.dtype,device=xyzs.device)],dim=1).transpose_(0,1)
+            print(xyzs.shape)
+            depth = torch.zeros((w,h),device=xyzs.device).float()
+            print(camera.full_proj_transform.shape)
+            xyzs = camera.full_proj_transform@xyzs
+            xyzs = (xyzs/xyzs[3:,:])
+            p_view = torch.matmul(camera.world_view_transform,xyzs)
+            #xyzs = torch.matmul(camera.projection_matrix,xyzs).transpose_(0,1)
+            xyzs = xyzs.transpose_(0,1)
+            zval = p_view[2,:]
+            print(zval.min(),zval.max())
+            idx = torch.sort(zval)[1]
+            xyzs = xyzs[idx,...]
+            zval = zval[idx]
+
+            def f(v,S):return ((v + 1.0) * S - 1.0) * 0.5
+            xs = (f(xyzs[:,0],w)).to(torch.int)
+            ys = (f(xyzs[:,1],h)).to(torch.int)
+             
+            #mask = torch.logical_and(torch.logical_and(xs>=0,xs<h),torch.logical_and(ys>=0,ys<w))
+            print(xs.min(),xs.max(),ys.min(),ys.max(),h,w)
+            depth[xs,ys] = zval
+            from torchvision.utils import save_image
+            #torch.cuda.synchronize()
+            save_image((depth-zval.min())/(zval.max()-zval.min()),'tmp.png')
+            exit()
+
+
+
     def get_inside_mask(self,bbox):
         xmin,ymin,zmin = bbox[0,...]
         xmax,ymax,zmax = bbox[-1,...]

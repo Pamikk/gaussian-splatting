@@ -134,6 +134,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
+        depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         Ll1 = l1_loss(image, gt_image)
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
@@ -190,7 +191,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 radii_time = time.time()
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 bbox_filter = gaussians.get_inside_mask(bbox)
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter,bbox_filter)
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
                 radii_time_accum += time.time()-radii_time
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
