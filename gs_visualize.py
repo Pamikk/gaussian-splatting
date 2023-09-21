@@ -101,7 +101,7 @@ def sh_to_rgb(vertices,sh):
 			SH_C3[6] * x * (xx - 3.0 * yy) * sh[15]
 	result += 0.5
 	return result
-def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
+def render_sets(dataset : ModelParams, iteration=None,args=None):
     with torch.no_grad():
         model_path = dataset.model_path
         gaussians = GaussianModel(dataset.sh_degree)
@@ -143,7 +143,7 @@ def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
         
         idx = torch.sort(distances)[1]
         #mask = opacities<0.2
-        mask = torch.logical_and(mask>=2,opacities>opacity)
+        mask = torch.logical_and(mask>=2,opacities>args.opacity)
         mask = idx[mask]
         xyzs = xyzs[mask,...]
         opacities=opacities[mask,...]
@@ -155,7 +155,7 @@ def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
         print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
         transform = np.eye(4)
         res = o3d.geometry.TriangleMesh()
-        chunk = 4e7
+        chunk = 5e7
         idx = 0
         N = xyzs.shape[0]
         mesh_fore = o3d.geometry.TriangleMesh()
@@ -166,11 +166,11 @@ def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
         for i in tqdm(range(N)):
             scale = scales[i,:]
             val = torch.sqrt(scale.min()*scale.max())
-            resolution = min(10,int(val*4000))
+            resolution = min(9,int(val*1000))
             if (resolution>=2)and(scale.min()>1e-3):
                 mesh = o3d.geometry.TriangleMesh.create_sphere(radius=2.0, resolution=resolution)
                 np.fill_diagonal(transform[:3,:3],scale.cpu().numpy())
-                if resolution > 6:
+                if resolution > args.sh_threshold:
                     vertices = torch.tensor(np.asarray(mesh.vertices)).cuda()
                     mesh.vertex_colors = o3d.utility.Vector3dVector(sh_to_rgb(vertices/2,shs[i,...]).clamp(0,1).cpu().numpy())
                 else:
@@ -198,7 +198,7 @@ def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
                     mesh_back+=mesh'''
                 if (ptn>=chunk):
                     res.remove_duplicated_triangles()
-                    o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{opacity}.ply'),res)
+                    o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{args.opacity}.ply'),res)
                     print(np.asarray(res.vertices).shape,np.asarray(res.triangles).shape)                
                     res = o3d.geometry.TriangleMesh()
                     idx+=1
@@ -208,7 +208,8 @@ def render_sets(dataset : ModelParams, iteration=None,opacity=0.2):
                     o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}.ply'),mesh_back)
                     mesh_fore = o3d.geometry.TriangleMesh()
                     mesh_back = o3d.geometry.TriangleMesh()'''
-        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{opacity}.ply'),res)     
+        o3d.io.write_triangle_mesh(os.path.join(model_path,f'ellipsoid_{idx}_{args.opacity}.ply'),res)
+        print(np.asarray(res.vertices).shape,np.asarray(res.triangles).shape) 
         #o3d.visualization.draw_geometries(meshset)
         '''mesh_fore = o3d.geometry.TriangleMesh()
         mesh_back = o3d.geometry.TriangleMesh()
@@ -228,10 +229,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--opacity", default=0.2, type=float)
+    parser.add_argument("--sh_threshold", default=10, type=int)
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args),opacity=args.opacity)
+    render_sets(model.extract(args),args = args)
