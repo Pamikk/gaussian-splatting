@@ -23,6 +23,8 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 import time
 import gc
 from tqdm import tqdm
+def f(v,S):return ((v + 1.0) * S - 1.0) * 0.5
+#ndc to pix
 class GaussianTensor(nn.Module):
     def __init__(self, sh_degree : int):
         super(GaussianTensor, self).__init__()
@@ -40,6 +42,9 @@ class GaussianTensor(nn.Module):
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
+        self.near = 0.0
+        self.far = 0.0
+        self.n_seen = 0
 def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
     L = build_scaling_rotation(scaling_modifier * scaling, rotation)
     actual_covariance = L @ L.transpose(1, 2)
@@ -76,6 +81,9 @@ class GaussianModel(nn.Module):
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
+        self.near = 0.0
+        self.far = 0.0
+        self.n_seen = 0
         self.setup_functions()
     def capture(self):
         return [
@@ -524,34 +532,39 @@ class GaussianModel(nn.Module):
         with torch.no_grad():
             h,w =int(camera.image_height),int(camera.image_width),
             xyzs = self.get_xyz[filter]
-            print(xyzs.min(),xyzs.max())
+            distance = torch.sqrt(torch.norm(xyzs-camera.camera_center.reshape(1,3),dim=-1))
             n = xyzs.shape[0]
-            xyzs = torch.cat([xyzs,torch.ones((n,1),dtype=xyzs.dtype,device=xyzs.device)],dim=1).transpose_(0,1)
-            print(xyzs.shape)
-            depth = torch.zeros((w,h),device=xyzs.device).float()
-            print(camera.full_proj_transform.shape)
-            xyzs = camera.full_proj_transform@xyzs
-            xyzs = (xyzs/xyzs[3:,:])
-            p_view = torch.matmul(camera.world_view_transform,xyzs)
-            #xyzs = torch.matmul(camera.projection_matrix,xyzs).transpose_(0,1)
-            xyzs = xyzs.transpose_(0,1)
-            zval = p_view[2,:]
-            print(zval.min(),zval.max())
+            xyzs = torch.cat([xyzs,torch.ones((n,1),dtype=xyzs.dtype,device=xyzs.device)],dim=1)
+            depth = torch.zeros((h,w),device=xyzs.device).float()
+            xyzs = xyzs@camera.full_proj_transform
+            xyzs = xyzs/(xyzs[:,3:]+1e-6)
+            zval =distance#xyzs[:,2] #p_view[:,2]
+            
             idx = torch.sort(zval)[1]
             xyzs = xyzs[idx,...]
             zval = zval[idx]
+            distance = distance[idx]
+            self.near = (self.near*self.n_seen+zval.min())/(self.n_seen+1)
+            self.far = (self.far*self.n_seen+zval.max())/(self.n_seen+1)
+            self.n_seen +=1
 
-            def f(v,S):return ((v + 1.0) * S - 1.0) * 0.5
-            xs = (f(xyzs[:,0],w)).to(torch.int)
-            ys = (f(xyzs[:,1],h)).to(torch.int)
-             
-            #mask = torch.logical_and(torch.logical_and(xs>=0,xs<h),torch.logical_and(ys>=0,ys<w))
-            print(xs.min(),xs.max(),ys.min(),ys.max(),h,w)
-            depth[xs,ys] = zval
-            from torchvision.utils import save_image
+            xs = xyzs[:,0]/xyzs[:,2]
+            ys = xyzs[:,1]/xyzs[:,2]
+            mask = torch.logical_and(torch.logical_and(xs>=-1,xs<=1),torch.logical_and(ys>=-1,ys<=1))
+            
+            xs,ys,zval,distance = xs[mask],ys[mask],zval[mask],distance[mask]
+            xs = (f(xs,w)).to(torch.int)
+            ys = (f(ys,h)).to(torch.int)
+            zval = zval.clamp(2.125,4.525)
+            depth[ys,xs] = torch.sigmoid(3.25-zval)
+            
+            #from torchvision.utils import save_image
+            #depth = depth
+            #dmap =cv2.applyColorMap(depth.cpu().numpy(), cv2.COLORMAP_JET)
             #torch.cuda.synchronize()
-            save_image((depth-zval.min())/(zval.max()-zval.min()),'tmp.png')
-            exit()
+            #save_image(depth,'tmp.png')
+            #exit()
+            return depth
 
 
 

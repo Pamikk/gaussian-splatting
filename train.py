@@ -33,7 +33,8 @@ except ImportError:
 def project_3d_bbox(bbox,camera):
     twodbbox = camera.intrinsic*camera.exitrinsic*bbox
 
-l1_loss = torch.nn.L1Loss()
+l1_loss = torch.nn.L1Loss(reduction='sum')
+l1_loss_mean = torch.nn.L1Loss()
 ssim = SSIM()#torch.nn.DataParallel(SSIM())
 accum=1
 rm_ssim_after_iters = 30000
@@ -108,7 +109,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     break
             except Exception as e:
                 network_gui.conn = None'''
-
+        torch.cuda.empty_cache()
         iter_start.record()
         train_start = time.time()
 
@@ -134,9 +135,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
-        depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
+        
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
-        Ll1 = l1_loss(image, gt_image)
+        #from torchvision.utils import save_image
+        #save_image(gt_image,'tmp_gt.png')
+        depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
+        Ll1 = (l1_loss((image*depth)[:,depth>0], (gt_image*depth)[:,depth>0])/depth.sum() + l1_loss_mean(image,gt_image))/2
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
             loss = Ll1
         elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
@@ -229,6 +233,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t |")
     print("\t |-- optimize: ", optimize_time_accum)
     print("\t |")
+    print(gaussians.near.item(),gaussians.far.item())
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):

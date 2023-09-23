@@ -12,3 +12,6 @@ submodules/simple-knn/simple_knn.egg-info/SOURCES.txt
 submodules/simple-knn/simple_knn.egg-info/top_level.txt
 nohup.out
 colmap.log
+tmp_gt.png
+.gitignore
+tmp.png
