@@ -555,7 +555,7 @@ class GaussianModel(nn.Module):
             xs,ys,zval,distance = xs[mask],ys[mask],zval[mask],distance[mask]
             xs = (f(xs,w)).to(torch.int)
             ys = (f(ys,h)).to(torch.int)
-            zval = zval.clamp(2.125,4.525)
+            zval = zval.clamp(0,4.525)
             depth[ys,xs] = torch.sigmoid(3.25-zval)
             
             #from torchvision.utils import save_image

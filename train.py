@@ -140,7 +140,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #from torchvision.utils import save_image
         #save_image(gt_image,'tmp_gt.png')
         depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
-        Ll1 = (l1_loss((image*depth)[:,depth>0], (gt_image*depth)[:,depth>0])/depth.sum() + l1_loss_mean(image,gt_image))/2
+        Ll1 = (l1_loss((image*depth)[:,depth>0], (gt_image*depth)[:,depth>0])/depth.sum()) #+ l1_loss_mean(image,gt_image))/2
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
             loss = Ll1
         elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
