@@ -134,7 +134,7 @@ class SSIM(nn.Module):
         )
 
     @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, x, y):
+    def forward(self, x, y,mask=None):
         """Calculate the mean SSIM (MSSIM) between two 4d tensors.
 
         Args:
@@ -152,10 +152,10 @@ class SSIM(nn.Module):
             self.C1= self.C1.type_as(x)
         if x.type() != self.C2.type():
             self.C2= self.C2.type_as(x)'''
-        return self.ssim(x, y)
+        return self.ssim(x, y,mask)
 
-    def ssim(self, x, y):
-        ssim= self._ssim(self.gaussian_filter.gaussian_window,x, y,self.C1,self.C2)
+    def ssim(self, x, y,mask):
+        ssim= self._ssim(self.gaussian_filter.gaussian_window,x, y,self.C1,self.C2,mask)
         return ssim.mean()
 
     def msssim(self, x, y):
@@ -201,8 +201,7 @@ class SSIM(nn.Module):
         cs = A2 / B2
         ssim = l * cs
         return ssim
-    @torch.jit.script
-    def _ssim(window,x, y,C1,C2):
+    def _ssim(self,window,x, y,C1,C2,mask):
         s = window.shape[-1]
         ss =    1
         pad = s//2
@@ -225,7 +224,7 @@ class SSIM(nn.Module):
         l = torch.div(A1, B1)
         cs = torch.div(A2, B2)
         ssim = torch.multiply(l,cs)
-        return ssim
+        return (ssim*(1-mask))[:,mask>0]
 
 def ssim(
     x,
