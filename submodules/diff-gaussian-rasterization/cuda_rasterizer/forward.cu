@@ -244,9 +244,9 @@ __global__ void preprocessCUDA(int P, int D, int M,
 		rgb[idx * (C+1) + 0] = result.x;
 		rgb[idx * (C+1) + 1] = result.y;
 		rgb[idx * (C+1) + 2] = result.z;
-		rgb[idx * (C+1) + 3] = p_view.z;
+		
 	}
-
+    rgb[idx * (C+1) + 3] = p_view.z;
 	// Store some useful helper data for the next steps.
 	depths[idx] = p_view.z;
 	radii[idx] = my_radius;
@@ -302,7 +302,7 @@ renderCUDA(
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 }; 
-	float depth = 0;
+	float depth = -10000.0f;
 
 	// Iterate over batches until all done or range is complete
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -355,7 +355,8 @@ renderCUDA(
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * (CHANNELS+1) + ch] * alpha * T;
-            depth = max(depth,features[collected_id[j] * (CHANNELS+1) + CHANNELS])
+			if (depth<=features[collected_id[j] * (CHANNELS+1) + CHANNELS] )
+                depth = features[collected_id[j] * (CHANNELS+1) + CHANNELS];
 			T = test_T;
 
 			// Keep track of last range entry to update this

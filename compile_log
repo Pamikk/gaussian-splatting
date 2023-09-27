@@ -1,0 +1,8 @@
+Processing ./submodules/diff-gaussian-rasterization
+  Preparing metadata (setup.py): started
+  Preparing metadata (setup.py): finished with status 'done'
+Building wheels for collected packages: diff-gaussian-rasterization
+  Building wheel for diff-gaussian-rasterization (setup.py): started
+  Building wheel for diff-gaussian-rasterization (setup.py): finished with status 'error'
+  Running setup.py clean for diff-gaussian-rasterization
+Failed to build diff-gaussian-rasterization

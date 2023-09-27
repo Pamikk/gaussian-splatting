@@ -224,7 +224,7 @@ class SSIM(nn.Module):
         l = torch.div(A1, B1)
         cs = torch.div(A2, B2)
         ssim = torch.multiply(l,cs)
-        return (ssim*(1-mask))[:,mask>0]
+        return ssim
 
 def ssim(
     x,

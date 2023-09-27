@@ -16,3 +16,4 @@ tmp_gt.png
 .gitignore
 tmp.png
 SIBR_viewers
+*.png

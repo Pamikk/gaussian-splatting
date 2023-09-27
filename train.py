@@ -24,6 +24,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from torch.profiler import profile, record_function, ProfilerActivity
+from torchvision.utils import save_image
 import time
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -114,8 +115,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #if (iteration - 1) == debug_from:
             #pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        image, viewspace_point_tensor, visibility_filter, radii,depth = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"]
         render_time_accum += time.time() - render_time
+        print(depth.min(),depth.max())
+        save_image(depth,'tmpv2.png')
         torch.cuda.synchronize()
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
