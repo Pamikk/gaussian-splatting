@@ -36,6 +36,7 @@ def project_3d_bbox(bbox,camera):
 
 l1_loss = torch.nn.L1Loss(reduction='sum')
 l1_loss_mean = torch.nn.L1Loss()
+MSE_Loss = torch.nn.MSELoss()
 ssim = SSIM()#torch.nn.DataParallel(SSIM())
 accum=1
 rm_ssim_after_iters = 30000
@@ -133,7 +134,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
             loss = Ll1
         else:
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + 0.01*MSE_Loss(image,gt_image)
         loss_cal_time += time.time() - loss_time
         loss.backward()
         cur_loss = loss.item()
@@ -176,7 +177,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 depth = (depth-depth.min())/(depth.max()-depth.min())
                 save_image(depth,os.path.join(scene.model_path,f'depth_{iteration}.png'))
                 save_image(alpha,os.path.join(scene.model_path,f'alpah_{iteration}.png'))
-                scene.save(iteration)
+                save_image(gt_image,os.path.join(scene.model_path,f'gt_{iteration}.png'))
+                #scene.save(iteration)
             densify_time = time.time()
             # Densification
             
@@ -223,7 +225,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t |")
     print("\t |-- optimize: ", optimize_time_accum)
     print("\t |")
-    print(gaussians.near.item(),gaussians.far.item())
+    #print(gaussians.near.item(),gaussians.far.item())
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -295,7 +297,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000,10_000, 20_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[5000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=list(range(0,30000,5000)))
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
