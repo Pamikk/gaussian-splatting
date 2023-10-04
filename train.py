@@ -90,7 +90,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     viewpoint_cam_stack = scene.getTrainCameras().copy()
-    sparsity = []
     loss_cal_time=0
     bbox = torch.tensor(scene.stbbox).cuda()
     for iteration in range(first_iter, opt.iterations + 1):     
@@ -115,10 +114,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #if (iteration - 1) == debug_from:
             #pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii,depth = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"]
+        image, viewspace_point_tensor, visibility_filter, radii,depth,alpha = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"],render_pkg["alpha"]
         render_time_accum += time.time() - render_time
-        print(depth.min(),depth.max())
-        save_image(depth,'tmpv2.png')
+        
         torch.cuda.synchronize()
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
@@ -127,7 +125,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         #from torchvision.utils import save_image
         #save_image(gt_image,'tmp_gt.png')
-        depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
+        #depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
         #print(depth.shape,image.shape)
         Ll1 = l1_loss_mean(image,gt_image)
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
@@ -175,6 +173,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print(f'current gpu utilization:{torch.cuda.utilization(device=None)}')
                 
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
+                depth = (depth-depth.min())/(depth.max()-depth.min())
+                save_image(depth,os.path.join(scene.model_path,f'depth_{iteration}.png'))
+                save_image(alpha,os.path.join(scene.model_path,f'alpah_{iteration}.png'))
                 scene.save(iteration)
             densify_time = time.time()
             # Densification
@@ -293,8 +294,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[10_000, 20_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000,10_000, 20_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[5000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
