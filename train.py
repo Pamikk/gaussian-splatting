@@ -85,7 +85,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     radii_time = 0
     radii_time_accum = 0
     cuda_time = 0
-
+    save_time = 0
     viewpoint_stack = None
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
@@ -115,26 +115,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #if (iteration - 1) == debug_from:
             #pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii,depth,alpha = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"],render_pkg["alpha"]
+        image, viewspace_point_tensor, visibility_filter, radii,depth= render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"]
         render_time_accum += time.time() - render_time
         
         torch.cuda.synchronize()
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
-        
+        gaussians.add_depth_stats(depth)
+        dweights = torch.sigmoid(3.25-depth.clamp(1,4.525))
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         #from torchvision.utils import save_image
         #save_image(gt_image,'tmp_gt.png')
         #depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
         #print(depth.shape,image.shape)
-        Ll1 = l1_loss_mean(image,gt_image)
+        Ll1 = l1_loss_mean(image*dweights,gt_image*dweights)
+        
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
             loss = Ll1
         elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
             loss = Ll1
         else:
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + 0.01*MSE_Loss(image,gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) #+ 0.01*MSE_Loss(image,gt_image)
         loss_cal_time += time.time() - loss_time
         loss.backward()
         cur_loss = loss.item()
@@ -154,6 +156,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         train_time_accum += train_end - train_start
         
         with torch.no_grad():
+            logging_time=time.time()
             # Progress bar
             ema_loss_for_log = 0.4 * cur_loss + 0.6 * ema_loss_for_log
             #torch.cuda.synchronize()
@@ -176,9 +179,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 depth = (depth-depth.min())/(depth.max()-depth.min())
                 save_image(depth,os.path.join(scene.model_path,f'depth_{iteration}.png'))
-                save_image(alpha,os.path.join(scene.model_path,f'alpah_{iteration}.png'))
                 save_image(gt_image,os.path.join(scene.model_path,f'gt_{iteration}.png'))
                 #scene.save(iteration)
+            save_time += time.time()- logging_time
             densify_time = time.time()
             # Densification
             
@@ -212,7 +215,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\n[ITER {}] Saving Gaussians".format(iteration))
     scene.save(iteration)
     print("|")
-    print(" | total: ", total_time_accum)
+    print(" | total: ", total_time_accum-save_time)
     print("\t |")
     print("\t |-- training (total): ", train_time_accum)
     print("\t \t|-- render time: ", render_time_accum)
@@ -225,7 +228,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t |")
     print("\t |-- optimize: ", optimize_time_accum)
     print("\t |")
-    #print(gaussians.near.item(),gaussians.far.item())
+    print(gaussians.near,gaussians.far)
+    print(gaussians.near_min,gaussians.far_max)
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):

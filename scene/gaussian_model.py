@@ -83,6 +83,9 @@ class GaussianModel(nn.Module):
         self.spatial_lr_scale = 0
         self.near = 0.0
         self.far = 0.0
+        self.near_min = 10
+        self.far_max = -1
+        self.far = 0.0
         self.n_seen = 0
         self.setup_functions()
     def capture(self):
@@ -528,6 +531,12 @@ class GaussianModel(nn.Module):
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+    def add_depth_stats(self,zval):
+        self.near = (self.near*self.n_seen+zval.min())/(self.n_seen+1)
+        self.far = (self.far*self.n_seen+zval.max())/(self.n_seen+1)
+        self.n_seen +=1
+        self.near_min = min(zval.min(),self.near_min)
+        self.far_max = max(zval.max(),self.far_max)
     def render_depth_map(self,camera,filter):
         with torch.no_grad():
             h,w =int(camera.image_height),int(camera.image_width),

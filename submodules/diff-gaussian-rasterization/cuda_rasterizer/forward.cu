@@ -304,7 +304,7 @@ renderCUDA(
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
 	float D = 0;
-
+    float acc = 0;
 	// Iterate over batches until all done or range is complete
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
 	{
@@ -323,7 +323,7 @@ renderCUDA(
 			collected_conic_opacity[block.thread_rank()] = conic_opacity[coll_id];
 		}
 		block.sync();
-
+        
 		// Iterate over current batch
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
@@ -357,7 +357,10 @@ renderCUDA(
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 				//D += depths[collected_id[j]] * alpha * T;
-            D += depths[collected_id[j]] * alpha * T;
+			if ((acc<0.99)&&(depths[collected_id[j]]>D)){
+                D = depths[collected_id[j]];
+				acc+= alpha * T;
+			}else acc+= alpha * T;
 			T = test_T;
 
 			// Keep track of last range entry to update this
