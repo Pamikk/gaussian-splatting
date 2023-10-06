@@ -3,8 +3,10 @@
 #python render.py -s /home/pami/dataset_on/360_v2/truck_col -m /home/pami/exps_on/gs/truck_col
 #python train.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai
 #python render.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai
-python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai
-python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai --opacity 0
-python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai --opacity 0 --sh_threshold 10
-python gs_visualize.py -s /home/pami/dataset_on/360_v2/bicycle -m /home/pami/exps_on/gs/bicycle
-python gs_visualize.py -s /home/pami/dataset_on/360_v2/bicycle -m /home/pami/exps_on/gs/bicycle --opacity 0 --sh_threshold 10
+#python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai
+#python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai --opacity 0
+#python gs_visualize.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai --opacity 0 --sh_threshold 10
+#python gs_visualize.py -s /home/pami/dataset_on/360_v2/bicycle -m /home/pami/exps_on/gs/bicycle
+#python gs_visualize.py -s /home/pami/dataset_on/360_v2/bicycle -m /home/pami/exps_on/gs/bicycle --opacity 0 --sh_threshold 10
+python train.py -s /home/pami/dataset_on/360_v2/bonsai -m /home/pami/exps_on/gs/bonsai_depth
+python train.py -s /home/pami/dataset_on/360_v2/bicycle -m /home/pami/exps_on/gs/bicycle_depth

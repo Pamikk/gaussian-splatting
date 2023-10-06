@@ -74,6 +74,7 @@ class SSIM(nn.Module):
         return_msssim=False,
         padding=None,
         ensemble_kernel=True,
+        reduction='mean',
     ):
         """Calculate the mean SSIM (MSSIM) between two 4D tensors.
 
@@ -132,9 +133,10 @@ class SSIM(nn.Module):
             padding=padding,
             ensemble_kernel=ensemble_kernel,
         )
+        self.reduction = reduction
 
     @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, x, y,mask=None):
+    def forward(self, x, y):
         """Calculate the mean SSIM (MSSIM) between two 4d tensors.
 
         Args:
@@ -152,11 +154,14 @@ class SSIM(nn.Module):
             self.C1= self.C1.type_as(x)
         if x.type() != self.C2.type():
             self.C2= self.C2.type_as(x)'''
-        return self.ssim(x, y,mask)
+        return self.ssim(x, y)
 
-    def ssim(self, x, y,mask):
-        ssim= self._ssim(self.gaussian_filter.gaussian_window,x, y,self.C1,self.C2,mask)
-        return ssim.mean()
+    def ssim(self, x, y):
+        ssim= self._ssim(self.gaussian_filter.gaussian_window,x, y,self.C1,self.C2)
+        if self.reduction=='mean':
+            return ssim.mean()
+        else:
+            return ssim
 
     def msssim(self, x, y):
         ms_components = []
@@ -201,7 +206,7 @@ class SSIM(nn.Module):
         cs = A2 / B2
         ssim = l * cs
         return ssim
-    def _ssim(self,window,x, y,C1,C2,mask):
+    def _ssim(self,window,x, y,C1,C2):
         s = window.shape[-1]
         ss =    1
         pad = s//2
