@@ -66,8 +66,8 @@ RasterizeGaussiansCUDA(
   auto float_opts = means3D.options().dtype(torch::kFloat32);
 
   torch::Tensor out_color = torch::full({NUM_CHANNELS, H, W}, 0.0, float_opts);
-  torch::Tensor out_depth = torch::full({1, H, W}, 0.0, float_opts);
-  torch::Tensor out_alpha = torch::full({1, H, W}, 0.0, float_opts);
+  torch::Tensor out_depth = torch::full({1, H, W}, 0.0, float_opts).detach();
+  torch::Tensor out_alpha = torch::full({1, H, W}, 0.0, float_opts).detach();
   torch::Tensor radii = torch::full({P}, 0, means3D.options().dtype(torch::kInt32));
   
   torch::Device device(torch::kCUDA);
@@ -188,8 +188,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  reinterpret_cast<char*>(binningBuffer.contiguous().data_ptr()),
 	  reinterpret_cast<char*>(imageBuffer.contiguous().data_ptr()),
 	  dL_dout_color.contiguous().data<float>(),
-	  dL_dout_depth.contiguous().data<float>(),
-	  dL_dout_alpha.contiguous().data<float>(),
+	  //dL_dout_depth.contiguous().data<float>(),
+	  //dL_dout_alpha.contiguous().data<float>(),
 	  dL_dmeans2D.contiguous().data<float>(),
 	  dL_dconic.contiguous().data<float>(),  
 	  dL_dopacity.contiguous().data<float>(),

@@ -33,7 +33,8 @@ except ImportError:
     TENSORBOARD_FOUND = False
 def project_3d_bbox(bbox,camera):
     twodbbox = camera.intrinsic*camera.exitrinsic*bbox
-
+import torchvision
+blur = torchvision.transforms.GaussianBlur(5, sigma=(0.1, 2.0))
 l1_loss = torch.nn.L1Loss(reduction='none')
 #l1_loss_mean = torch.nn.L1Loss()
 MSE_Loss = torch.nn.MSELoss(reduction='none')
@@ -115,7 +116,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #if (iteration - 1) == debug_from:
             #pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii,depth= render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"]
+        image, viewspace_point_tensor, visibility_filter, radii,depth= render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["depth"].detach()
         render_time_accum += time.time() - render_time
         
         torch.cuda.synchronize()
@@ -123,20 +124,33 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Loss
         loss_time = time.time()
         gaussians.add_depth_stats(depth)
-        dweights = torch.sigmoid(5.5-depth.clamp(1,10))
+        dweights = torch.sigmoid(10-depth)
+        #dweights = blur(dweights)
+        #blur to cover the holes with bad depth calculation
+        #print(dweights.min(),dweights.max())
+        #exit()
         gt_image = viewpoint_cam.original_image#possible to load all images into cuda first
         #from torchvision.utils import save_image
         #save_image(gt_image,'tmp_gt.png')
         #depth = gaussians.render_depth_map(viewpoint_cam,visibility_filter)
         #print(depth.shape,image.shape)
-        Ll1 = torch.mean(dweights*l1_loss(image,gt_image))
+        Ll1 = l1_loss(image,gt_image)
         
         if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
             loss = Ll1
         elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
             loss = Ll1
         else:
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - torch.mean(dweights*ssim(image, gt_image))) #+ 0.01*MSE_Loss(image,gt_image)
+            ssim_cal = 1.0 - ssim(image, gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal#+ 0.01*MSE_Loss(image,gt_image)
+            #print(wsum,torch.mean(dweights*loss),loss.mean())
+            mse = MSE_Loss(image,gt_image)
+            if iteration > opt.densify_until_iter:
+                loss = Ll1.mean() +  mse.mean()
+            else:
+                loss = loss.mean() + torch.mean(dweights*(mse+Ll1)) +  mse.mean()
+            #exit()
+            
         loss_cal_time += time.time() - loss_time
         loss.backward()
         cur_loss = loss.item()
@@ -170,7 +184,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, cuda_time_single, testing_iterations, scene, render, (pipe, background))
+            training_report(tb_writer, iteration, Ll1.mean(), loss, l1_loss, cuda_time_single, testing_iterations, scene, render, (pipe, background))
 
             if (iteration in saving_iterations):
                 print(f'max gpu mem:{torch.cuda.max_memory_allocated()/(1024**2)}')
@@ -178,8 +192,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 depth = (depth-depth.min())/(depth.max()-depth.min())
+                #dweights = (dweights-dweights.min())/(dweights.max()-dweights.min())
                 save_image(depth,os.path.join(scene.model_path,f'depth_{iteration}.png'))
+                save_image(dweights,os.path.join(scene.model_path,f'dweights_{iteration}.png'))
                 save_image(gt_image,os.path.join(scene.model_path,f'gt_{iteration}.png'))
+                print(dweights.min(),dweights.max())
                 #scene.save(iteration)
             save_time += time.time()- logging_time
             densify_time = time.time()
