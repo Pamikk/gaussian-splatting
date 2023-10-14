@@ -123,8 +123,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #print(viewspace_point_tensor.shape,visibility_filter.shape,radii.shape)
         # Loss
         loss_time = time.time()
-        gaussians.add_depth_stats(depth)
-        dweights = torch.sigmoid(10-depth)
+        dweights =  gaussians.add_depth_stats(depth)
+        
         #dweights = blur(dweights)
         #blur to cover the holes with bad depth calculation
         #print(dweights.min(),dweights.max())
@@ -145,8 +145,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal#+ 0.01*MSE_Loss(image,gt_image)
             #print(wsum,torch.mean(dweights*loss),loss.mean())
             mse = MSE_Loss(image,gt_image)
-            if iteration > opt.densify_until_iter:
-                loss = Ll1.mean() +  mse.mean()
+            if iteration < 7500:
+                loss = loss.mean() +  mse.mean()
             else:
                 loss = loss.mean() + torch.mean(dweights*(mse+Ll1)) +  mse.mean()
             #exit()
@@ -246,7 +246,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print("\t |-- optimize: ", optimize_time_accum)
     print("\t |")
     print(gaussians.near,gaussians.far)
-    print(gaussians.near_min,gaussians.far_max)
+    print(gaussians.dwmax,gaussians.depth_mid)
+    print(gaussians.adaptive_constant,gaussians.dscale)
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):

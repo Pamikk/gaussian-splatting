@@ -25,6 +25,26 @@ import gc
 from tqdm import tqdm
 def f(v,S):return ((v + 1.0) * S - 1.0) * 0.5
 #ndc to pix
+def gaussian_3d_coeff(xyzs, covs):
+    # xyzs: [N, 3]
+    # covs: [N, 6]
+    x, y, z = xyzs[:, 0], xyzs[:, 1], xyzs[:, 2]
+    a, b, c, d, e, f = covs[:, 0], covs[:, 1], covs[:, 2], covs[:, 3], covs[:, 4], covs[:, 5]
+
+    # eps must be small enough !!!
+    inv_det = 1 / (a * d * f + 2 * e * c * b - e**2 * a - c**2 * d - b**2 * f + 1e-24)
+    inv_a = (d * f - e**2) * inv_det
+    inv_b = (e * c - b * f) * inv_det
+    inv_c = (e * b - c * d) * inv_det
+    inv_d = (a * f - c**2) * inv_det
+    inv_e = (b * c - e * a) * inv_det
+    inv_f = (a * d - b**2) * inv_det
+
+    power = -0.5 * (x**2 * inv_a + y**2 * inv_d + z**2 * inv_f) - x * y * inv_b - x * z * inv_c - y * z * inv_e
+
+    power[power > 0] = -1e10 # abnormal values... make weights 0
+        
+    return torch.exp(power)
 class GaussianTensor(nn.Module):
     def __init__(self, sh_degree : int):
         super(GaussianTensor, self).__init__()
@@ -83,11 +103,13 @@ class GaussianModel(nn.Module):
         self.spatial_lr_scale = 0
         self.near = 0.0
         self.far = 0.0
-        self.near_min = 10
-        self.far_max = -1
+        self.dwmax = 2
         self.far = 0.0
+        self.depth_mid = 0.0
+        self.dscale = 1
         self.n_seen = 0
         self.setup_functions()
+        self.adaptive_constant = 10
     def capture(self):
         return [
             self.active_sh_degree,
@@ -535,8 +557,14 @@ class GaussianModel(nn.Module):
         self.near = (self.near*self.n_seen+zval.min())/(self.n_seen+1)
         self.far = (self.far*self.n_seen+zval.max())/(self.n_seen+1)
         self.n_seen +=1
-        self.near_min = min(zval.min(),self.near_min)
-        self.far_max = max(zval.max(),self.far_max)
+        self.depth_mid = (self.depth_mid*self.n_seen+zval.median())/(self.n_seen+1)
+        '''if (self.n_seen)%1000==0:
+            self.adaptive_constant = min((self.near+self.far),self.depth_mid)
+            self.dscale = 20/(self.far-self.near)'''
+        dweights = torch.sigmoid(10-zval)
+        
+        self.dwmax = min(self.dwmax,dweights.max())
+        return dweights
     def render_depth_map(self,camera,filter):
         with torch.no_grad():
             h,w =int(camera.image_height),int(camera.image_width),
@@ -593,3 +621,79 @@ class GaussianModel(nn.Module):
             self.xyz_gradient_accum[inside_update] += torch.norm(viewspace_point_tensor.grad[inside_update,:2], dim=-1, keepdim=True)
             self.xyz_gradient_accum[outside_update] += 0.5*torch.norm(viewspace_point_tensor.grad[outside_update,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
+    @torch.no_grad()
+    def extract_fields(self, resolution=128, num_blocks=16, relax_ratio=1.5):
+        # resolution: resolution of field
+        
+        block_size = 2 / num_blocks
+
+        assert resolution % block_size == 0
+        split_size = resolution // num_blocks
+
+        opacities = self.get_opacity
+
+        # pre-filter low opacity gaussians to save computation
+        mask = (opacities > 0.5).squeeze(1)
+
+        opacities = opacities[mask]
+        xyzs = self.get_xyz[mask]
+        stds = self.get_scaling[mask]
+        print(xyzs.shape)
+        # normalize to ~ [-1, 1]
+        mn, mx = xyzs.amin(0), xyzs.amax(0)
+        print(mn,mx)
+        self.center = (mn + mx) / 2
+        self.scale = 1.8 / (mx - mn).amax().item()
+
+        xyzs = (xyzs - self.center) * self.scale
+        stds = stds * self.scale
+
+        covs = self.covariance_activation(stds, 1, self._rotation[mask])
+
+        # tile
+        device = opacities.device
+        occ = torch.zeros([resolution] * 3, dtype=torch.float32, device=device)
+
+        X = torch.linspace(-1, 1, resolution).split(split_size)
+        Y = torch.linspace(-1, 1, resolution).split(split_size)
+        Z = torch.linspace(-1, 1, resolution).split(split_size)
+        print(relax_ratio*block_size)
+
+        # loop blocks (assume max size of gaussian is small than relax_ratio * block_size !!!)
+        for xi, xs in enumerate(X):
+            for yi, ys in enumerate(Y):
+                for zi, zs in enumerate(Z):
+                    xx, yy, zz = torch.meshgrid(xs, ys, zs)
+                    # sample points [M, 3]
+                    pts = torch.cat([xx.reshape(-1, 1), yy.reshape(-1, 1), zz.reshape(-1, 1)], dim=-1).to(device)
+                    # in-tile gaussians mask
+                    vmin, vmax = pts.amin(0), pts.amax(0)
+                    vmin -= block_size * relax_ratio
+                    vmax += block_size * relax_ratio
+                    mask = (xyzs < vmax).all(-1) & (xyzs > vmin).all(-1)
+                    # if hit no gaussian, continue to next block
+                    if not mask.any():
+                        continue
+                    mask_xyzs = xyzs[mask] # [L, 3]
+                    mask_covs = covs[mask] # [L, 6]
+                    mask_opas = opacities[mask].view(1, -1) # [L, 1] --> [1, L]
+
+                    # query per point-gaussian pair.
+                    g_pts = pts.unsqueeze(1).repeat(1, mask_covs.shape[0], 1) - mask_xyzs.unsqueeze(0) # [M, L, 3]
+                    g_covs = mask_covs.unsqueeze(0).repeat(pts.shape[0], 1, 1) # [M, L, 6]
+
+                    # batch on gaussian to avoid OOM
+                    batch_g = 1024
+                    val = 0
+                    for start in range(0, g_covs.shape[1], batch_g):
+                        end = min(start + batch_g, g_covs.shape[1])
+                        w = gaussian_3d_coeff(g_pts[:, start:end].reshape(-1, 3), g_covs[:, start:end].reshape(-1, 6)).reshape(pts.shape[0], -1) # [M, l]
+                        val += (mask_opas[:, start:end] * w).sum(-1)
+                    
+                    # kiui.lo(val, mask_opas, w)
+                
+                    occ[xi * split_size: xi * split_size + len(xs), 
+                        yi * split_size: yi * split_size + len(ys), 
+                        zi * split_size: zi * split_size + len(zs)] = val.reshape(len(xs), len(ys), len(zs)) 
+
+        return occ

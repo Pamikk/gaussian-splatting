@@ -357,7 +357,7 @@ renderCUDA(
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 				//D += depths[collected_id[j]] * alpha * T;
-			if ((acc<0.99)&&(depths[collected_id[j]]>D)){
+			if ((acc<0.95)&&(depths[collected_id[j]]>D)){
                 D = depths[collected_id[j]];
 				acc+= alpha * T;
 			}else acc+= alpha * T;
