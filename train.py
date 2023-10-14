@@ -58,7 +58,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
-
+    first_stage_iter = checkpoint_iterations[0] if len(checkpoint_iterations)>0 else 0
     total_time = 0
     total_time_accum = 0
 
@@ -136,20 +136,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #print(depth.shape,image.shape)
         Ll1 = l1_loss(image,gt_image)
         
-        if (iteration > rm_ssim_after_iters)and(rm_ssim_after):
-            loss = Ll1
-        elif (iteration < rm_ssim_after_iters) and (not rm_ssim_after):
-            loss = Ll1
+        ssim_cal = 1.0 - ssim(image, gt_image)
+        mse = MSE_Loss(image,gt_image)
+        if iteration < first_stage_iter:
+            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal +  mse
         else:
-            ssim_cal = 1.0 - ssim(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal#+ 0.01*MSE_Loss(image,gt_image)
-            #print(wsum,torch.mean(dweights*loss),loss.mean())
-            mse = MSE_Loss(image,gt_image)
-            if iteration < 7500:
-                loss = loss.mean() +  mse.mean()
-            else:
-                loss = loss.mean() + torch.mean(dweights*(mse+Ll1)) +  mse.mean()
-            #exit()
+            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal + dweights*(mse+Ll1)+mse
+        loss = loss.mean()
             
         loss_cal_time += time.time() - loss_time
         loss.backward()
