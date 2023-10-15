@@ -141,7 +141,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration < first_stage_iter:
             loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal +  mse
         else:
-            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal + dweights*(mse+Ll1)+mse
+            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal + mse
+            loss += dweights*loss
         loss = loss.mean()
             
         loss_cal_time += time.time() - loss_time
