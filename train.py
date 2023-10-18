@@ -89,7 +89,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     save_time = 0
     viewpoint_stack = None
     ema_loss_for_log = 0.0
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
+    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress",ascii=True)
     first_iter += 1
     viewpoint_cam_stack = scene.getTrainCameras().copy()
     loss_cal_time=0
@@ -139,7 +139,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         ssim_cal = 1.0 - ssim(image, gt_image)
         mse = MSE_Loss(image,gt_image)
         if iteration < first_stage_iter:
-            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal +  mse
+            loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal + mse
         else:
             loss = (1.0 - opt.lambda_dssim) * Ll1+ opt.lambda_dssim * ssim_cal + mse
             loss += dweights*loss
@@ -195,7 +195,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             save_time += time.time()- logging_time
             densify_time = time.time()
             # Densification
-            
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
                 radii_time = time.time()

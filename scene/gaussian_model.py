@@ -152,9 +152,9 @@ class GaussianModel(nn.Module):
         opt_dict, 
         self.spatial_lr_scale) = model_args
         self.training_setup(training_args)
-        self.xyz_gradient_accum = xyz_gradient_accum
-        self.denom = denom
-        self.optimizer.load_state_dict(opt_dict)
+        #self.xyz_gradient_accum = xyz_gradient_accum
+        #self.denom = denom
+        #self.optimizer.load_state_dict(opt_dict)
     def restore_no_training_args(self, model_args):
         
         (self.active_sh_degree, 
@@ -500,6 +500,9 @@ class GaussianModel(nn.Module):
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
+        if (torch.cuda.max_memory_allocated()/(1024**2))>19000:
+            print('reach max mem, no split')
+            return
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()

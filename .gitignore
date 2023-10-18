@@ -18,3 +18,5 @@ tmp.png
 SIBR_viewers
 *.png
 script.sh
+tmp.png
+*.log
